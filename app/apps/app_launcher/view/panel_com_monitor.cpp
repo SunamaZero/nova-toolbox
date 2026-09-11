@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "lvgl_cpp/button.h"
+#include "toolbox_theme.h"
 #include "lvgl_cpp/label.h"
 #include "view.h"
 #include <lvgl.h>
@@ -47,12 +48,12 @@ public:
         _msg_panel->setOneLine(false);
         _msg_panel->setBorderWidth(0);
         _msg_panel->setBgColor(lv_color_hex(0x383838));
-        _msg_panel->setTextFont(&lv_font_montserrat_18);
+        _msg_panel->setTextFont(tb::fontBody());
 
         _label_msg = std::make_unique<Label>(_window->get());
         _label_msg->align(LV_ALIGN_LEFT_MID, 46, 172);
         _label_msg->setText("Port: RS485\nBaud: 115200");
-        _label_msg->setTextFont(&lv_font_montserrat_18);
+        _label_msg->setTextFont(tb::fontBody());
         _label_msg->setTextColor(lv_color_hex(0xDEDEDE));
 
         _btn_send_msg = std::make_unique<Button>(_window->get());
@@ -60,7 +61,7 @@ public:
         _btn_send_msg->align(LV_ALIGN_CENTER, 128, 174);
         _btn_send_msg->setBgColor(lv_color_hex(0x616161));
         _btn_send_msg->setRadius(18);
-        _btn_send_msg->label().setTextFont(&lv_font_montserrat_22);
+        _btn_send_msg->label().setTextFont(tb::fontTitle());
         _btn_send_msg->label().setTextColor(lv_color_hex(0xE7E7E7));
         _btn_send_msg->label().setText("Send \"Hello M5Stack!\"");
         _btn_send_msg->onClick().connect([&] {

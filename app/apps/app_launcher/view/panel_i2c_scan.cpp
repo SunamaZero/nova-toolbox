@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <lvgl.h>
 #include <hal/hal.h>
 #include <memory>
@@ -147,7 +148,7 @@ private:
         int16_t y = 136 + row * 27 - 356 / 2;
 
         label->align(LV_ALIGN_CENTER, x, y);
-        label->setTextFont(&lv_font_montserrat_16);
+        label->setTextFont(tb::fontBody());
         label->setTextColor(lv_color_hex(0x352B2A));
         label->setText(fmt::format("{:02X}", addr));
     }

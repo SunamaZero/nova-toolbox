@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <cstdint>
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -31,19 +32,19 @@ void PanelPowerMonitor::init()
     _label_voltage->align(LV_ALIGN_RIGHT_MID, _label_voltage_pos_x, _label_voltage_pos_y);
     _label_voltage->setText("..");
     _label_voltage->setTextColor(lv_color_hex(_label_color));
-    _label_voltage->setTextFont(&lv_font_montserrat_22);
+    _label_voltage->setTextFont(tb::fontTitle());
 
     _label_current = std::make_unique<Label>(lv_screen_active());
     _label_current->align(LV_ALIGN_RIGHT_MID, _label_current_pos_x, _label_current_pos_y);
     _label_current->setText("..");
     _label_current->setTextColor(lv_color_hex(_label_color));
-    _label_current->setTextFont(&lv_font_montserrat_22);
+    _label_current->setTextFont(tb::fontTitle());
 
     _label_cpu_temp = std::make_unique<Label>(lv_screen_active());
     _label_cpu_temp->align(LV_ALIGN_CENTER, -25, 82);
     _label_cpu_temp->setText("..");
     _label_cpu_temp->setTextColor(lv_color_hex(0x535353));
-    _label_cpu_temp->setTextFont(&lv_font_montserrat_18);
+    _label_cpu_temp->setTextFont(tb::fontBody());
 
     _img_chg_arrow_up = std::make_unique<Image>(lv_screen_active());
     _img_chg_arrow_up->align(LV_ALIGN_CENTER, 286, -281);

@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <cstdint>
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -53,7 +54,7 @@ public:
             update_rec_button();
         });
 
-        _rec_btn->label().setTextFont(&lv_font_montserrat_16);
+        _rec_btn->label().setTextFont(tb::fontBody());
         _rec_btn->label().setTextColor(lv_color_hex(0xF4F3F3));
     }
 

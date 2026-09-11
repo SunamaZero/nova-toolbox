@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <algorithm>
 #include <cstdint>
 #include <lvgl.h>
@@ -35,19 +36,19 @@ void PanelImu::init()
     _label_accel_x = std::make_unique<Label>(lv_screen_active());
     _label_accel_x->align(LV_ALIGN_LEFT_MID, _label_accel_x_pos_x, _label_accel_x_pos_y);
     _label_accel_x->setTextColor(lv_color_hex(_label_color));
-    _label_accel_x->setTextFont(&lv_font_montserrat_16);
+    _label_accel_x->setTextFont(tb::fontBody());
     _label_accel_x->setText("..");
 
     _label_accel_y = std::make_unique<Label>(lv_screen_active());
     _label_accel_y->align(LV_ALIGN_LEFT_MID, _label_accel_y_pos_x, _label_accel_y_pos_y);
     _label_accel_y->setTextColor(lv_color_hex(_label_color));
-    _label_accel_y->setTextFont(&lv_font_montserrat_16);
+    _label_accel_y->setTextFont(tb::fontBody());
     _label_accel_y->setText("..");
 
     _label_accel_z = std::make_unique<Label>(lv_screen_active());
     _label_accel_z->align(LV_ALIGN_LEFT_MID, _label_accel_z_pos_x, _label_accel_z_pos_y);
     _label_accel_z->setTextColor(lv_color_hex(_label_color));
-    _label_accel_z->setTextFont(&lv_font_montserrat_16);
+    _label_accel_z->setTextFont(tb::fontBody());
     _label_accel_z->setText("..");
 
     _accel_dot = std::make_unique<Container>(lv_screen_active());

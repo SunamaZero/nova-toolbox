@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <functional>
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -51,7 +52,7 @@ public:
         _btn_io_toggle->align(LV_ALIGN_CENTER, 47, 0);
         _btn_io_toggle->setSize(114, 42);
         _btn_io_toggle->setRadius(16);
-        _btn_io_toggle->label().setTextFont(&lv_font_montserrat_22);
+        _btn_io_toggle->label().setTextFont(tb::fontTitle());
         _btn_io_toggle->onClick().connect([&]() {
             _is_on = !_is_on;
             update_btn_style();

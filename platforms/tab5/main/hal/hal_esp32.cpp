@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: MIT
  */
 #include "hal/hal_esp32.h"
+
+// LVGL 官方自带中文字体（LV_FONT_SIMSUN_16_CJK=y）
+extern "C" {
+extern const lv_font_t tb_cn_16;
+}
 extern "C" {
 #include "utils/rx8130/rx8130.h"
 }
@@ -102,6 +107,12 @@ void HalEsp32::init()
                              }};
     lvDisp = bsp_display_start_with_config(&cfg);
     lv_display_set_rotation(lvDisp, LV_DISPLAY_ROTATION_90);
+
+    // 屏幕级中文字体：LVGL 的"全局默认字体"走的是 CONFIG_LV_FONT_DEFAULT（choice 名，
+    // ESP-IDF 不生成该宏 → 实际回退到 montserrat 拉丁字体 → 中文变方框）。
+    // 这里直接把字体压到屏幕对象上，所有子控件继承，彻底根治方框。
+    lv_obj_set_style_text_font(lv_screen_active(), &tb_cn_16, 0);
+    mclog::tagInfo(_tag, "screen default font -> tb_cn_16 (完整中文字库 3755 字)");
     bsp_display_backlight_on();
 
     // // Touchpad lvgl indev
@@ -124,6 +135,13 @@ void HalEsp32::init()
     set_gpio_output_capability();
 
     bsp_display_unlock();
+
+    // Tab5 官方键盘（I2C 0x6D，没插就静默跳过）
+    if (keyboardInit()) {
+        keyboardRegisterLvglIndev(lvDisp);
+    } else {
+        mclog::tagInfo(_tag, "keyboard not present, soft keyboard only");
+    }
 }
 
 static const gpio_num_t _driver_gpios[] = {

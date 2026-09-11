@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <algorithm>
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -42,7 +43,7 @@ void PanelLcdBacklight::init()
 
     _label_panel_ic = std::make_unique<Label>(lv_screen_active());
     _label_panel_ic->align(LV_ALIGN_RIGHT_MID, _label_panel_ic_x, _label_panel_ic_y);
-    _label_panel_ic->setTextFont(&lv_font_montserrat_16);
+    _label_panel_ic->setTextFont(tb::fontBody());
     _label_panel_ic->setTextColor(lv_color_hex(0x55866D));
     _label_panel_ic->setText(fmt::format("LCD IC: {}", GetHAL()->getDisplayPanelIc()));
 

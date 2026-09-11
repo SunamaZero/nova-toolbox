@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <cstdint>
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -50,11 +51,11 @@ public:
             update_rec_button();
         });
 
-        _rec_btn->label().setTextFont(&lv_font_montserrat_16);
+        _rec_btn->label().setTextFont(tb::fontBody());
         _rec_btn->label().setTextColor(lv_color_hex(0xF4F3F3));
 
         _label_hp_detect = std::make_unique<Label>(_window->get());
-        _label_hp_detect->setTextFont(&lv_font_montserrat_18);
+        _label_hp_detect->setTextFont(tb::fontBody());
         _label_hp_detect->align(LV_ALIGN_CENTER, 0, 70);
     }
 

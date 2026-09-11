@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <lvgl.h>
 #include <hal/hal.h>
 #include <mooncake_log.h>
@@ -66,7 +67,7 @@ public:
                 _btn_apply = std::make_unique<Button>(_window->get());
                 _btn_apply->align(LV_ALIGN_CENTER, 280, 184);
                 _btn_apply->setSize(155, 43);
-                _btn_apply->label().setText("Apply");
+                _btn_apply->label().setText("Connect");
                 _btn_apply->label().setTextFont(&lv_font_montserrat_24);
                 _btn_apply->setShadowWidth(0);
                 _btn_apply->setRadius(18);
@@ -158,13 +159,13 @@ void PanelRtc::init()
 {
     _label_time = std::make_unique<Label>(lv_screen_active());
     _label_time->align(LV_ALIGN_CENTER, 335, -249);
-    _label_time->setTextFont(&lv_font_montserrat_22);
+    _label_time->setTextFont(tb::fontTitle());
     _label_time->setTextColor(lv_color_hex(0xD86037));
     _label_time->setText("..");
 
     _label_date = std::make_unique<Label>(lv_screen_active());
     _label_date->align(LV_ALIGN_CENTER, 335, -223);
-    _label_date->setTextFont(&lv_font_montserrat_18);
+    _label_date->setTextFont(tb::fontBody());
     _label_date->setTextColor(lv_color_hex(0xD86037));
     _label_date->setText("..");
 

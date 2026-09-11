@@ -285,6 +285,23 @@ private:
 };
 
 /**
+ * @brief Nova 调试工具箱：6 个工具入口（串口/UDP/TCP/HTTP/MQTT/WiFi）
+ *
+ */
+class PanelToolbox : public PanelBase {
+public:
+    void init() override;
+    void update(bool isStacked) override;
+
+private:
+    void openHome();
+
+    std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Button> _btn;
+    std::unique_ptr<ui::Window> _window;
+    bool _auto_open = false;
+};
+
+/**
  * @brief
  *
  */

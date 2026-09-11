@@ -263,6 +263,45 @@ public:
     {
     }
 
+    /* -------------------------------- Keyboard -------------------------------- */
+    // Tab5 官方键盘（I2C 0x6D @ ExtPort1）：STRING 模式直接输出 ASCII
+    virtual bool keyboardInit()
+    {
+        return false;
+    }
+    virtual bool keyboardIsReady()
+    {
+        return false;
+    }
+    virtual uint8_t keyboardReadChar()
+    {
+        return 0;
+    }
+    // 取键值：0x20~0x7E=ASCII，0x101+=特殊键（enter/backspace/delete/tab/esc/space）
+    virtual uint16_t keyboardReadKey()
+    {
+        return 0;
+    }
+
+    // 键盘事件所在的 LVGL group（输入框要加进去才能收到实体键盘输入）
+    virtual void* keyboardGetGroup()
+    {
+        return nullptr;
+    }
+    // STA（客户端）连接：连到外部路由器
+    virtual bool wifiConnectSta(const char* ssid, const char* pass)
+    {
+        return false;
+    }
+    virtual bool wifiIsStaConnected()
+    {
+        return false;
+    }
+    virtual std::string wifiGetStaIp()
+    {
+        return "-";
+    }
+
     /* --------------------------------- SD Card -------------------------------- */
     struct FileEntry_t {
         std::string name;
@@ -318,6 +357,20 @@ public:
         std::queue<uint8_t> txQueue;
     };
     UartMonitorData_t uartMonitorData;
+    // 串口参数（波特率）
+    virtual bool setRs485Baudrate(uint32_t baud)
+    {
+        return false;
+    }
+    virtual uint32_t getRs485Baudrate()
+    {
+        return 115200;
+    }
+    // 完整串口参数：data_bits 5-8 / parity 0=none 2=even 3=odd / stop_bits 1,2(=1.5),2
+    virtual bool setRs485Config(uint32_t baud, int data_bits, int parity, int stop_bits)
+    {
+        return false;
+    }
     virtual void uartMonitorSend(std::string msg, bool newLine = true)
     {
         std::lock_guard<std::mutex> lock(uartMonitorData.mutex);

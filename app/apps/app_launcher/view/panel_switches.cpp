@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "view.h"
+#include "toolbox_theme.h"
 #include <lvgl.h>
 #include <hal/hal.h>
 #include <assets/assets.h>
@@ -148,19 +149,19 @@ private:
         if (GetHAL()->getExtAntennaEnable()) {
             _label_msg_a = std::make_unique<Label>(_panel_msg->get());
             _label_msg_a->align(LV_ALIGN_CENTER, 0, -13);
-            _label_msg_a->setTextFont(&lv_font_montserrat_22);
+            _label_msg_a->setTextFont(tb::fontTitle());
             _label_msg_a->setTextColor(lv_color_hex(0xFFFFFF));
             _label_msg_a->setText("Using external antenna");
 
             _label_msg_b = std::make_unique<Label>(_panel_msg->get());
             _label_msg_b->align(LV_ALIGN_CENTER, 0, 13);
-            _label_msg_b->setTextFont(&lv_font_montserrat_22);
+            _label_msg_b->setTextFont(tb::fontTitle());
             _label_msg_b->setTextColor(lv_color_hex(0xFFFFFF));
             _label_msg_b->setText("please make sure it's connected.");
         } else {
             _label_msg_a = std::make_unique<Label>(_panel_msg->get());
             _label_msg_a->align(LV_ALIGN_CENTER, 0, 0);
-            _label_msg_a->setTextFont(&lv_font_montserrat_22);
+            _label_msg_a->setTextFont(tb::fontTitle());
             _label_msg_a->setTextColor(lv_color_hex(0xFFFFFF));
             _label_msg_a->setText("Using internal antenna.");
 

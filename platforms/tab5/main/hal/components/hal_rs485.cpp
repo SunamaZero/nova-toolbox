@@ -107,3 +107,46 @@ void HalEsp32::rs485_init()
 
     xTaskCreate(_rs485_test_task, "rs485", 2000, NULL, 5, NULL);
 }
+
+// ==================== 串口参数配置 ====================
+static uint32_t s_rs485_baud = 115200;
+
+bool HalEsp32::setRs485Baudrate(uint32_t baud)
+{
+    esp_err_t e = uart_set_baudrate(tab5_rs485_uart_num, baud);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "set baudrate %lu failed: %s", (unsigned long)baud, esp_err_to_name(e));
+        return false;
+    }
+    s_rs485_baud = baud;
+    ESP_LOGI(TAG, "baudrate -> %lu", (unsigned long)baud);
+    return true;
+}
+
+uint32_t HalEsp32::getRs485Baudrate()
+{
+    return s_rs485_baud;
+}
+
+// ==================== 串口完整参数配置 ====================
+// data_bits: 5/6/7/8   parity: 0=none 2=even 3=odd   stop_bits: 1=1, 1.5=1.5, 2=2
+bool HalEsp32::setRs485Config(uint32_t baud, int data_bits, int parity, int stop_bits)
+{
+    uart_config_t cfg   = {};
+    cfg.baud_rate       = baud;
+    cfg.data_bits       = (data_bits >= 5 && data_bits <= 8) ? (uart_word_length_t)(data_bits - 5) : UART_DATA_8_BITS;
+    cfg.parity          = (uart_parity_t)parity;
+    // stop bits 枚举：1=1bit, 2=1.5bit, 3=2bit
+    cfg.stop_bits       = (stop_bits == 2) ? UART_STOP_BITS_2 : ((stop_bits == 1) ? UART_STOP_BITS_1 : UART_STOP_BITS_1_5);
+    cfg.flow_ctrl       = UART_HW_FLOWCTRL_DISABLE;
+    cfg.rx_flow_ctrl_thresh = 122;
+    cfg.source_clk      = UART_SCLK_DEFAULT;
+
+    esp_err_t e = uart_param_config(tab5_rs485_uart_num, &cfg);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "uart_param_config failed: %s", esp_err_to_name(e));
+        return false;
+    }
+    ESP_LOGI(TAG, "uart cfg: baud=%lu data=%d parity=%d stop=%d", (unsigned long)baud, data_bits, parity, stop_bits);
+    return true;
+}

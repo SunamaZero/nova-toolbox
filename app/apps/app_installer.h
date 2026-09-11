@@ -8,7 +8,7 @@
 #include <memory>
 #include <hal/hal.h>
 #include "app_template/app_template.h"
-#include "app_launcher/app_launcher.h"
+#include "app_toolbox/app_toolbox.h"
 #include "app_startup_anim/app_startup_anim.h"
 /* Header files locator (Don't remove) */
 
@@ -36,6 +36,7 @@ inline void on_install_apps()
 {
     // 安装 App
     // mooncake::GetMooncake().installApp(std::make_unique<AppTemplate>());
-    mooncake::GetMooncake().installApp(std::make_unique<AppLauncher>());
+    // Nova: 官方 Launcher 已移除，工具箱作为主界面
+    mooncake::GetMooncake().installApp(std::make_unique<AppToolbox>());
     /* Install app locator (Don't remove) */
 }

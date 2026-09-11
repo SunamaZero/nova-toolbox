@@ -75,6 +75,15 @@ public:
     void setExtAntennaEnable(bool enable) override;
     bool getExtAntennaEnable() override;
     void startWifiAp() override;
+    bool keyboardInit() override;
+    bool keyboardIsReady() override;
+    uint8_t keyboardReadChar() override;
+    void keyboardRegisterLvglIndev(void* disp);
+    void* keyboardGetGroup() override;
+    uint16_t keyboardReadKey() override;
+    bool wifiConnectSta(const char* ssid, const char* pass) override;
+    bool wifiIsStaConnected() override;
+    std::string wifiGetStaIp() override;
 
     bool isSdCardMounted() override;
     std::vector<FileEntry_t> scanSdCard(const std::string& dirPath) override;
@@ -93,6 +102,9 @@ private:
     void set_gpio_output_capability();
     void hid_init();
     void rs485_init();
+    bool setRs485Baudrate(uint32_t baud) override;
+    uint32_t getRs485Baudrate() override;
+    bool setRs485Config(uint32_t baud, int data_bits, int parity, int stop_bits) override;
     bool wifi_init();
     void imu_init();
     void update_system_time();

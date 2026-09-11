@@ -1,7 +1,12 @@
-# Name,   Type, SubType, Offset,  Size, Flags
-# Note: if you have increased the bootloader size, make sure to update the offsets to avoid overlap,,,,
-nvs,data,nvs,0x9000,0x6000,
-phy_init,data,phy,0xf000,0x1000,
-factory,app,factory,0x10000,10M,
-human_face_det,data,spiffs,,400K,
-storage,data,spiffs,,2M,
+# ESP-IDF Partition Table — M5Stack Tab5 工具箱（双 OTA，支持远程升级）
+#
+# 为什么这么排：原来的 `factory` 单分区无法 OTA（没有可切换的备份分区）。
+# 改成 ota_0 / ota_1 双分区后，设备可自己把新固件写进另一个分区并切换启动。
+# 固件 3.75MB → 6M 分区余量 ~37%（字体占 3.5MB，若还要加字库可再调大分区）。
+#
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+ota_0,    app,  ota_0,   0x10000,  0x600000,
+ota_1,    app,  ota_1,   0x610000, 0x600000,
+storage,  data, spiffs,  0xC10000, 0x200000,

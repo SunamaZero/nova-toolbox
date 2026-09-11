@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "lvgl_cpp/obj.h"
+#include "toolbox_theme.h"
 #include "view.h"
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -46,7 +47,7 @@ public:
         _label_aec->align(LV_ALIGN_CENTER, -60, 59);
         _label_aec->setText("Speaker Output Capture");
         _label_aec->setTextColor(lv_color_hex(0xD6D6D6));
-        _label_aec->setTextFont(&lv_font_montserrat_16);
+        _label_aec->setTextFont(tb::fontBody());
 
         _chart_aec = std::make_unique<Chart>(_window->get());
         apply_chart_style(_chart_aec.get(), -60, -17);
@@ -68,7 +69,7 @@ public:
             update_rec_button();
         });
 
-        _rec_btn->label().setTextFont(&lv_font_montserrat_18);
+        _rec_btn->label().setTextFont(tb::fontBody());
         _rec_btn->label().setTextColor(lv_color_hex(0x0B4D2C));
 
         update_rec_button();
