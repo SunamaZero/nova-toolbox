@@ -120,6 +120,7 @@ std::unique_ptr<TextArea> makeInput(lv_obj_t* parent, int x, int y, int w, const
     ta->align(LV_ALIGN_TOP_LEFT, x, y);
     ta->setSize(w, CtrlH);
     ta->setOneLine(true);
+    ta->setSize(w, CtrlH);   // 【必须】setOneLine 会把高度改成 LV_SIZE_CONTENT，之后要重新固定
     ta->setTextFont(tb::fontBody());
     if (text) ta->setText(text);
     if (hint) ta->setPlaceholderText(hint);
@@ -127,9 +128,8 @@ std::unique_ptr<TextArea> makeInput(lv_obj_t* parent, int x, int y, int w, const
     lv_obj_set_style_pad_left(ta->get(), tb::SpaceLg, 0);
     lv_obj_set_style_border_width(ta->get(), 2, 0);        // 描边加粗，框更显眼
     lv_obj_set_style_border_color(ta->get(), lv_color_hex(tb::border()), 0);
-    // 单行文本在 72px 高框里垂直居中（否则贴着顶边，看着像"高度没设计"）
-    lv_obj_set_style_pad_top(ta->get(), (CtrlH - 26) / 2, 0);
-    lv_obj_set_style_pad_bottom(ta->get(), 0, 0);
+    // 垂直居中的 padding 由 tb::styleInput() 统一算（用真实字体行高 + 已应用的尺寸）。
+    // 这里再硬编码一次会和主题算法打架 —— 之前就是这里把占位符压到框底。
     tool_kbd::attach(ta->get());   // 点击聚焦 + 弹软键盘（缺这行就是"点了没反应"）
     return ta;   // 点击聚焦 + 弹软键盘（缺这行就是"点了没反应"）
     return ta;
@@ -244,7 +244,7 @@ void SettingsToolWindow::buildOtaSection(lv_obj_t* parent, int card_y) {
     }, LV_EVENT_VALUE_CHANGED, nullptr);
 
     // Check Update / Upgrade
-    _btn_check = makeBtn(parent, x0 + w - 560, row2, 260, "Check Update", true);
+    _btn_check = makeBtn(parent, x0 + w - 560, row2, 260, "Check Update", false);
     _btn_check->onClick().connect([&]() {
         if (g_ota_state == 3) return;
         g_ota_state = 3; g_ota_progress = -1;

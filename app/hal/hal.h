@@ -381,6 +381,40 @@ public:
             uartMonitorData.txQueue.push('\n');
         }
     }
+
+    // ================= USB 串口（外接 USB↔485/232 适配器）=================
+    // 和板载 RS485 各自独立的队列，互不干扰；谁在用由工具页的"端口"决定
+    UartMonitorData_t usbSerialData;
+
+    /**
+     * 异步打开：底层 VCP::open 会阻塞等设备，故内部起任务，不能占 UI 线程
+     * @param channel 1..4 = 多串口适配器的第几路（CH344 对应接口 0/2/4/6）
+     */
+    virtual bool usbSerialOpenAsync(int channel)
+    {
+        return false;
+    }
+    virtual void usbSerialClose()
+    {
+    }
+    /** 0=未打开 1=正在找设备 2=已打开 3=失败或已拔出 */
+    virtual int usbSerialState()
+    {
+        return 0;
+    }
+    /** 取走"设备刚被拔出"标志（取完清零），UI 用它自动收尾 */
+    virtual bool usbSerialTakeDisconnected()
+    {
+        return false;
+    }
+    /** 串口参数下发到**适配器**（USB CDC line coding），不是 ESP32 的 UART */
+    virtual bool usbSerialSetLineCoding(uint32_t baud, int data_bits, int parity, int stop_bits)
+    {
+        return false;
+    }
+    virtual void usbSerialSend(const std::string& msg, bool newLine = true)
+    {
+    }
 };
 
 /**

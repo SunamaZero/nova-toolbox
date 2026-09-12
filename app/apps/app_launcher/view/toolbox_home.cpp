@@ -7,15 +7,24 @@
 #include "toolbox_theme.h"
 #include "toolbox_windows.h"
 #include "tool_kbd.h"
-#include "tool_settings.h"
 #include <hal/hal.h>
 #ifdef CONFIG_IDF_TARGET_ESP32P4
 #include "net_tools.h"
+#include "tool_settings.h"
+#include "tool_log.h"
 #endif
 
 #include <cstdint>
+#if __has_include("esp_app_desc.h")
+#include "esp_app_desc.h"
+static const char* fwVersion() { return esp_app_get_description()->version; }
+#elif defined(NOVA_FW_VER)
+static const char* fwVersion() { return NOVA_FW_VER; }
+#else
+static const char* fwVersion() { return "?"; }
+#endif
 #include <cstdio>
-#include <freertos/FreeRTOS.h>
+#include <freertos/FreeRTOS.h>   // 桌面端由 platforms/desktop/compat 提供
 #include <freertos/task.h>
 #include <mooncake_log.h>
 
@@ -28,27 +37,34 @@ static const char* _tag = "toolbox-home";
 static ToolboxHome* s_instance = nullptr;
 
 namespace {
-constexpr int NavRailWidth = 76;
+constexpr int NavRailWidth = 92;
+constexpr int NavBtnHeight = 62;   // 图标 + 标签两行   // 加宽：容纳图标 + 完整标签（原 76 放不下 SETTINGS）
 constexpr int TopBarHeight = 52;
+// 顶栏状态区尺寸：每项固定宽度，避免文字变长时互相挤压
+constexpr int StatusAreaWidth = 420;
+constexpr int BattTextWidth   = 150;
+constexpr int WifiTextWidth   = 230;
 constexpr int TaskBarHeight = 34;
 
 struct ToolDef {
-    const char* nav;   // 导航短名
-    const char* name;  // 卡片标题
+    const char* nav;    // 导航标签
+    const char* name;   // 卡片标题
     const char* desc;
     uint32_t accent;
+    uint32_t icon;      // FontAwesome 码点（字体已并入 FA，范围 U+F0xx~F7xx）
 };
 
-const ToolDef _tools[6] = {
-    {"UART", "UART", "RS485 monitor  HEX/ASCII", tb::accent()},
-    {"UDP", "UDP", "broadcast / loopback", tb::info()},
-    {"TCP", "TCP", "server :8888", tb::info()},
-    {"HTTP", "HTTP", "capture :8080", tb::warning()},
-    {"MQTT", "MQTT", "broker pub/sub", tb::success()},
-    {"SETTINGS", "SETTINGS", "WiFi / OTA / power", tb::success()},
+const ToolDef _tools[7] = {
+    {"UART",     "UART",     "RS485 monitor  HEX/ASCII", tb::accent(),  0xF120},  // terminal
+    {"UDP",      "UDP",      "broadcast / loopback",     tb::info(),    0xF1EB},  // wifi
+    {"TCP",      "TCP",      "server :8888",             tb::info(),    0xF0C1},  // link
+    {"HTTP",     "HTTP",     "capture :8080",            tb::warning(), 0xF0AC},  // globe
+    {"MQTT",     "MQTT",     "broker pub/sub",           tb::success(), 0xF1E0},  // share-alt
+    {"SETTINGS", "SETTINGS", "WiFi / OTA / power",       tb::success(), 0xF1DE},  // sliders
+    {"LOG",      "LOG",      "remote log query", tb::textDim(), 0xF03A},  // list
 };
 
-lv_obj_t* s_nav_btns[7] = {nullptr};  // 0=HOME, 1..6=工具（与 _tools 数量一致）
+lv_obj_t* s_nav_btns[8] = {nullptr};  // 0=HOME, 1..7=工具（与 _tools 数量一致）
 int s_active_page = 0;
 bool s_home_rebuild_pending = false;
 bool s_debug_auto_paged = false;   // DEBUG_AUTO_PAGE  // 防 async 重入
@@ -89,25 +105,42 @@ ToolboxHome::ToolboxHome()
     config.borderColor  = tb::border();
 }
 
-// ---- 导航栏按钮样式 ----
-static lv_obj_t* make_nav_btn(lv_obj_t* parent, const char* text, int page)
+// ---- 导航栏按钮：图标在上、标签在下 ----
+// 图标来自并入字体的 FontAwesome 码点；标签用 14px 等宽，保证 "SETTINGS" 8 字符不截断
+static lv_obj_t* make_nav_btn(lv_obj_t* parent, uint32_t icon_cp, const char* text, int page)
 {
     lv_obj_t* btn = lv_obj_create(parent);
-    lv_obj_set_size(btn, NavRailWidth - 12, 56);
+    lv_obj_set_size(btn, NavRailWidth - 12, NavBtnHeight);
     lv_obj_set_style_bg_color(btn, lv_color_hex(tb::surface()), 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_style_pad_all(btn, 0, 0);
+    lv_obj_set_style_pad_row(btn, 2, 0);
+    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_color(btn, lv_color_hex(tb::raised()), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
 
+    // 图标
+    lv_obj_t* ic = lv_label_create(btn);
+    char icbuf[8] = {0};
+    // UTF-8 编码 FontAwesome 码点
+    if (icon_cp < 0x800) { icbuf[0] = 0xC0 | (icon_cp >> 6); icbuf[1] = 0x80 | (icon_cp & 0x3F); }
+    else { icbuf[0] = 0xE0 | (icon_cp >> 12); icbuf[1] = 0x80 | ((icon_cp >> 6) & 0x3F); icbuf[2] = 0x80 | (icon_cp & 0x3F); }
+    lv_label_set_text(ic, icbuf);
+    lv_obj_set_style_text_font(ic, tb::fontBody(), 0);
+    lv_obj_set_style_text_color(ic, lv_color_hex(tb::textDim()), 0);
+    lv_obj_clear_flag(ic, LV_OBJ_FLAG_CLICKABLE);
+
+    // 标签
     lv_obj_t* lbl = lv_label_create(btn);
     lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, tb::fontSm(), 0);
+    lv_obj_set_style_text_font(lbl, tb::fontLabel(), 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(tb::textDim()), 0);
-    lv_obj_center(lbl);
     lv_obj_clear_flag(lbl, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_add_event_cb(btn, nav_click_cb, LV_EVENT_CLICKED, (void*)(intptr_t)page);
@@ -116,14 +149,14 @@ static lv_obj_t* make_nav_btn(lv_obj_t* parent, const char* text, int page)
 
 static void style_nav_active(int page)
 {
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 7; ++i) {
         lv_obj_t* b = s_nav_btns[i];
         if (!b) continue;
         bool active = (i == page);
         lv_obj_set_style_bg_color(b, lv_color_hex(active ? tb::raised() : tb::surface()), 0);
-        lv_obj_t* lbl = lv_obj_get_child(b, 0);
-        if (lbl) {
-            lv_obj_set_style_text_color(lbl, lv_color_hex(active ? tb::accent() : tb::textDim()), 0);
+        for (uint32_t ci = 0; ci < lv_obj_get_child_count(b); ++ci) {
+            lv_obj_t* ch = lv_obj_get_child(b, ci);
+            if (ch) lv_obj_set_style_text_color(ch, lv_color_hex(active ? tb::accent() : tb::textDim()), 0);
         }
     }
     s_active_page = page;
@@ -143,9 +176,9 @@ static void build_home_cards(lv_obj_t* content)
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scroll_dir(grid, LV_DIR_VER);
 
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 7; ++i) {
         lv_obj_t* card = lv_obj_create(grid);
-        lv_obj_set_size(card, 340, 180);
+        lv_obj_set_size(card, 267, 168);   // 4 列布局（原 340=3 列，第 7 张会孤立成行）
         lv_obj_set_style_bg_color(card, lv_color_hex(tb::raised()), 0);
         lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
         lv_obj_set_style_radius(card, 12, 0);
@@ -216,25 +249,29 @@ void ToolboxHome::onOpen()
     lv_obj_set_style_text_font(brand, tb::fontTitle(), 0);
     lv_obj_align(brand, LV_ALIGN_LEFT_MID, tb::SpaceLg, 0);
 
-    // ---- 顶栏右侧：电量 + WiFi 状态 ----
-    // 电量：INA226 读的母线电压（NP-F550 两颗锂电串联：6.0V 空 — 8.4V 满）
-    _batt_text = lv_label_create(bar);
+    // ---- 顶栏右侧状态区 ----
+    // 用 fixed-size 容器 + 每项固定宽度，避免用像素偏移定位
+    // （原来靠 -SpaceLg-150 / -330 硬偏移，WiFi 拿到 IP 后文字变长会压到左边标签）
+    // 注意：不再显示 "SYS READY" —— 它是恒定值，占位却没信息量，位置留给标题。
+    lv_obj_t* status = lv_obj_create(bar);
+    lv_obj_set_size(status, StatusAreaWidth, TopBarHeight);
+    lv_obj_align(status, LV_ALIGN_RIGHT_MID, -tb::SpaceLg, 0);
+    lv_obj_set_style_bg_opa(status, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(status, 0, 0);
+    lv_obj_set_style_pad_all(status, 0, 0);
+    lv_obj_set_style_pad_column(status, tb::SpaceLg, 0);
+    lv_obj_set_flex_flow(status, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(status, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(status, LV_OBJ_FLAG_SCROLLABLE);
+
+    // 电量：电池图标 + 百分比（不再堆原始电压，"7.8V" 那种裸数字在顶栏很突兀）
+    _batt_text = lv_label_create(status);
+    lv_obj_set_width(_batt_text, BattTextWidth);
     lv_label_set_text(_batt_text, "--");
     lv_obj_set_style_text_color(_batt_text, lv_color_hex(tb::textDim()), 0);
-    lv_obj_set_style_text_font(_batt_text, tb::fontSm(), 0);
-    lv_obj_align(_batt_text, LV_ALIGN_RIGHT_MID, -tb::SpaceLg, 0);
-
-    _wifi_text = lv_label_create(bar);
-    lv_label_set_text(_wifi_text, "WiFi: --");
-    lv_obj_set_style_text_color(_wifi_text, lv_color_hex(tb::textDim()), 0);
-    lv_obj_set_style_text_font(_wifi_text, tb::fontSm(), 0);
-    lv_obj_align(_wifi_text, LV_ALIGN_RIGHT_MID, -tb::SpaceLg - 150, 0);
-
-    _status_text = lv_label_create(bar);
-    lv_label_set_text(_status_text, "SYS READY");
-    lv_obj_set_style_text_color(_status_text, lv_color_hex(tb::textDim()), 0);
-    lv_obj_set_style_text_font(_status_text, tb::fontSm(), 0);
-    lv_obj_align(_status_text, LV_ALIGN_RIGHT_MID, -tb::SpaceLg - 330, 0);
+    lv_obj_set_style_text_font(_batt_text, tb::fontBody(), 0);
+    lv_obj_set_style_text_align(_batt_text, LV_TEXT_ALIGN_RIGHT, 0);
+    // WiFi 不再放顶栏（见底栏右下角）
 
     // ---- 中间行：导航栏 + 内容区 ----
     lv_obj_t* middle = lv_obj_create(win);
@@ -260,9 +297,9 @@ void ToolboxHome::onOpen()
     lv_obj_set_flex_flow(rail, LV_FLEX_FLOW_COLUMN);
     lv_obj_clear_flag(rail, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_nav_btns[0] = make_nav_btn(rail, "HOME", 0);
-    for (int i = 0; i < 6; ++i) {
-        s_nav_btns[i + 1] = make_nav_btn(rail, _tools[i].nav, i + 1);
+    s_nav_btns[0] = make_nav_btn(rail, 0xF015 /* house */, "HOME", 0);
+    for (int i = 0; i < 7; ++i) {
+        s_nav_btns[i + 1] = make_nav_btn(rail, _tools[i].icon, _tools[i].nav, i + 1);
     }
 
     // 内容区
@@ -289,8 +326,17 @@ void ToolboxHome::onOpen()
     lv_obj_set_style_pad_hor(taskbar, tb::SpaceMd, 0);
     lv_obj_clear_flag(taskbar, LV_OBJ_FLAG_SCROLLABLE);
 
+    // 左：品牌 + 真实固件版本（从 app_desc 读，不再硬编码 "v1.0"）
     lv_obj_t* ver = lv_label_create(taskbar);
-    lv_label_set_text(ver, "Tab5 Toolbox  v1.0  |  field-armor theme");
+    lv_label_set_text_fmt(ver, "NOVA TOOLBOX   v%s", fwVersion());
+
+    // 右：WiFi 状态（IP / offline）—— 用户要求放底栏右下角
+    _wifi_text = lv_label_create(taskbar);
+    lv_label_set_long_mode(_wifi_text, LV_LABEL_LONG_DOT);
+    lv_label_set_text(_wifi_text, "WiFi --");
+    lv_obj_set_style_text_color(_wifi_text, lv_color_hex(tb::textDim()), 0);
+    lv_obj_set_style_text_font(_wifi_text, tb::fontLabel(), 0);
+    lv_obj_align(_wifi_text, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_text_color(ver, lv_color_hex(tb::textDim()), 0);
     lv_obj_set_style_text_font(ver, tb::fontSm(), 0);
     lv_obj_align(ver, LV_ALIGN_LEFT_MID, 0, 0);
@@ -349,6 +395,7 @@ void ToolboxHome::openTool(int id)
     case 3: _tool_window = std::make_unique<HttpToolWindow>(); break;
     case 4: _tool_window = std::make_unique<MqttToolWindow>(); break;
     case 5: _tool_window = std::make_unique<SettingsToolWindow>(); break;
+    case 6: _tool_window = std::make_unique<LogToolWindow>(); break;
 #endif
     default: return;
     }
@@ -391,10 +438,16 @@ void ToolboxHome::onUpdate()
                 int pct = (int)((v - 6.0f) / (8.4f - 6.0f) * 100.0f);
                 if (pct < 0) { pct = 0; }
                 if (pct > 100) { pct = 100; }
-                snprintf(b, sizeof(b), "BAT %d%%  %.1fV", pct, v);
+                // 电池图标随电量变化（Nerd Font/FA：F240 满 → F244 空）
+                const char* ico = pct >= 90 ? "\xEF\x89\x80"
+                                : pct >= 60 ? "\xEF\x89\x81"
+                                : pct >= 40 ? "\xEF\x89\x82"
+                                : pct >= 20 ? "\xEF\x89\x83"
+                                            : "\xEF\x89\x84";
+                snprintf(b, sizeof(b), "%s  %d%%", ico, pct);
                 lv_obj_set_style_text_color(_batt_text, lv_color_hex(pct < 20 ? tb::danger() : tb::success()), 0);
             } else {
-                snprintf(b, sizeof(b), "BAT --  (USB)");
+                snprintf(b, sizeof(b), "\xEF\x89\x84  --");
                 lv_obj_set_style_text_color(_batt_text, lv_color_hex(tb::textDim()), 0);
             }
             lv_label_set_text(_batt_text, b);
@@ -403,10 +456,10 @@ void ToolboxHome::onUpdate()
             char b[96];
             if (GetHAL()->wifiIsStaConnected()) {
                 std::string ip = GetHAL()->wifiGetStaIp();
-                snprintf(b, sizeof(b), "WiFi: %s", ip.empty() ? "connected" : ip.c_str());
+                snprintf(b, sizeof(b), "WiFi %s", ip.empty() ? "online" : ip.c_str());
                 lv_obj_set_style_text_color(_wifi_text, lv_color_hex(tb::success()), 0);
             } else {
-                snprintf(b, sizeof(b), "WiFi: off");
+                snprintf(b, sizeof(b), "WiFi off");
                 lv_obj_set_style_text_color(_wifi_text, lv_color_hex(tb::textDim()), 0);
             }
             lv_label_set_text(_wifi_text, b);
@@ -477,6 +530,14 @@ void ToolboxHome::onClose()
     for (auto& b : s_nav_btns) {
         b = nullptr;
     }
+}
+
+// 调试用：直接切页（桌面模拟器点不了导航栏）
+void toolboxDebugShowPage(int page)
+{
+    GetHAL()->lvglLock();
+    if (s_instance) s_instance->showPage(page);
+    GetHAL()->lvglUnlock();
 }
 
 }  // namespace launcher_view

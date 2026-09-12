@@ -57,6 +57,9 @@ esp_err_t upgrade(const std::string& base_url, void (*progress_cb)(int)) {
     cfg.url = url.c_str();
     cfg.timeout_ms = 20000;
     cfg.keep_alive_enable = true;
+    // esp_https_ota 强制要求显式声明服务器验证策略，否则 begin() 直接返回 ESP_ERR_INVALID_ARG。
+    // 我们走局域网纯 HTTP（固件由本机 PC 提供），不需要证书校验。
+    cfg.skip_cert_common_name_check = true;
     esp_https_ota_config_t ocfg = {};
     ocfg.http_config = &cfg;
 

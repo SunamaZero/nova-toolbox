@@ -40,4 +40,15 @@ bool feedKey(uint16_t k);
  */
 bool hasFocus();
 
+/**
+ * @brief 收起屏幕软键盘（不影响输入框焦点）
+ *        实体键盘敲键时自动调用 —— 有物理键盘就没必要占半屏
+ */
+void hide();
+
+/**
+ * @brief 屏幕软键盘当前是否可见
+ */
+bool isVisible();
+
 }  // namespace tool_kbd

@@ -142,6 +142,12 @@ void attach(lv_obj_t* textarea)
 
 bool feedKey(uint16_t k)
 {
+    // 实体键盘敲键 → 自动收起屏幕软键盘（有人用物理键盘时，软键盘白占半屏）
+    // 注意要放在焦点判断之前：即使当前没有聚焦输入框，也应把软键盘收掉
+    if (isVisible()) {
+        hide();
+    }
+
     if (!s_focus_ta || !lv_obj_is_valid(s_focus_ta)) {
         s_focus_ta = nullptr;
         return false;
@@ -188,6 +194,24 @@ bool feedChar(uint8_t c)
 bool hasFocus()
 {
     return s_focus_ta && lv_obj_is_valid(s_focus_ta);
+}
+
+bool isVisible()
+{
+    return s_kb && lv_obj_is_valid(s_kb);
+}
+
+void hide()
+{
+    if (s_ime && lv_obj_is_valid(s_ime)) {
+        lv_obj_delete(s_ime);
+    }
+    s_ime = nullptr;
+    if (s_kb && lv_obj_is_valid(s_kb)) {
+        lv_obj_delete(s_kb);
+    }
+    s_kb = nullptr;
+    s_ta = nullptr;   // 焦点输入框保持（s_focus_ta 不动），下次点输入框会重新弹出
 }
 
 }  // namespace tool_kbd

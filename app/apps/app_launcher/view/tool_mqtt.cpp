@@ -1,7 +1,17 @@
 /*
  * Nova Toolbox for M5Stack Tab5
- * MQTT 测试工具：预设 broker 连接 + 订阅/发布
- * v1：固定 broker 候选 + 主题 tab5/#，按钮驱动（无文本输入依赖）
+ * MQTT 测试工具：连 broker、订阅主题、发布
+ *
+ * 布局（与串口页同构 —— 坐标全部来自 toolbox_layout.h，本文件不写死任何 x/y）：
+ *   左列 —— 报文区 + 发布输入框 + 发布按钮
+ *   右列 —— 状态 / 服务器 / 订阅 / 发布主题 / QoS / 消息数
+ *           + 连接·断开 + 清空·关闭
+ *
+ * 与 v1 的区别：
+ *   1. 发布主题不再写死：_row_pub 可编辑，发布时取界面当前值
+ *   2. 写死载荷的演示按钮（Apply cfg / Subscribe / Publish 固定串）全部删除，
+ *      能力并入「设置行 + 发送行」，没有"看着能按其实没用"的死按钮
+ *   3. 未连接时不假装发出去了 —— 报文区如实写一条「[未连接] xxx」
  */
 #if defined(__has_include)
 #if __has_include("sdkconfig.h")
@@ -12,6 +22,7 @@
 #ifdef CONFIG_IDF_TARGET_ESP32P4
 #include "toolbox_windows.h"
 #include "toolbox_theme.h"
+#include "toolbox_layout.h"
 #include "net_tools.h"
 #include "tool_kbd.h"
 #include <lvgl.h>
@@ -20,6 +31,7 @@
 #include <smooth_ui_toolkit.h>
 #include <smooth_lvgl.h>
 #include <apps/utils/audio/audio.h>
+#include <cstdio>
 #include <cstring>
 
 #include "mqtt_client.h"
@@ -30,40 +42,69 @@ using namespace smooth_ui_toolkit::lvgl_cpp;
 
 static const std::string _tag = "tool-mqtt";
 
-// 预设 broker（按可达性排序，可在代码里换）
-static const char* _MQTT_URI_DEFAULT = "mqtt://broker.emqx.io:1883";
-static const char* _MQTT_TOPIC_DEFAULT = "tab5/#";
-static const char* _SUB_TOPIC  = "tab5/#";
-static const char* _PUB_TOPIC  = "tab5/test";
+// 界面初始值（成员为空时兜底）。改这里就能改默认 broker / 主题。
+static constexpr const char* _MQTT_URI_INIT = "mqtt://broker.emqx.io:1883";
+// 界面里显示用（右列输入框只有 184px，带 scheme 的完整 URI 会被截断）
+static constexpr const char* _MQTT_HOST_INIT = "broker.emqx.io";
+static constexpr const char* _MQTT_SUB_INIT = "tab5/#";
+static constexpr const char* _MQTT_PUB_INIT = "tab5/test";
 
 static constexpr int _RX_MAX_CHARS = 3000;
+
+namespace {
+
+// 从 mqtt://broker.emqx.io:1883 里抠出 broker.emqx.io —— 状态行只有 242px，
+// 带 scheme/端口的全串会被 LV_LABEL_LONG_DOT 截成 "已连接 mqtt://broker.e…"
+std::string host_of(const std::string& uri)
+{
+    std::string s = uri;
+    size_t p = s.find("://");
+    if (p != std::string::npos) {
+        s = s.substr(p + 3);
+    }
+    p = s.find('@');           // 去掉 user:pass@
+    if (p != std::string::npos) {
+        s = s.substr(p + 1);
+    }
+    p = s.find_first_of(":/");  // 去掉 :port 和 /path
+    if (p != std::string::npos) {
+        s = s.substr(0, p);
+    }
+    return s;
+}
+
+}  // namespace
 
 MqttToolWindow::MqttToolWindow()
 {
     config.kfClosed = {500, 280, 90, 60, 0};
-    config.kfOpened = {0, 0, 1180, 622, 255};
+    config.kfOpened = {0, 0, tl::W, tl::PageH, 255};
     config.bgColor  = tb::bg();
 }
 
 void MqttToolWindow::pushEvent(const std::string& info)
 {
-    {
-        std::lock_guard<std::mutex> lock(_rx_mutex);
-        _rx_packets.push(info);
-        if (_rx_packets.size() > 50) {
-            _rx_packets.pop();
-        }
+    // 收下一条订阅消息就算一条（DATA 事件的格式是 "\n[sub <topic>] <data>"）
+    if (info.compare(0, 5, "\n[sub ") == 0) {
+        _msg_count++;
+    }
+    std::lock_guard<std::mutex> lock(_rx_mutex);
+    _rx_packets.push(info);
+    if (_rx_packets.size() > 50) {
+        _rx_packets.pop();
     }
 }
 
 void MqttToolWindow::setStatus(const char* s)
 {
-    if (_status_label) {
+    if (_status_label && s) {
         _status_label->setText(s);
     }
 }
 
-// ---- esp-mqtt 事件回调（C 线程上下文，只压队列）----
+// ---- esp-mqtt 事件回调（跑在 MQTT 任务上下文）----
+// 这里只做两件事：压队列 + 记连接标志。界面刷新一律留给 LVGL 线程的
+// onUpdate / refreshUi —— 在回调里碰 lv_obj 是跨线程写，迟早崩。
 void MqttToolWindow::mqttEventHandler(void* handler_args, esp_event_base_t base, int32_t event_id,
                                       void* event_data)
 {
@@ -72,12 +113,14 @@ void MqttToolWindow::mqttEventHandler(void* handler_args, esp_event_base_t base,
 
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED: {
+        self->_connected = true;   // 事件推动状态行 / 主操作按钮
         self->pushEvent("\n[broker connected]");
         // 连接后自动订阅
         esp_mqtt_client_subscribe((esp_mqtt_client_handle_t)self->_client, self->_sub_topic.c_str(), 1);
         break;
     }
     case MQTT_EVENT_DISCONNECTED:
+        self->_connected = false;
         self->pushEvent("\n[broker disconnected]");
         break;
     case MQTT_EVENT_DATA: {
@@ -101,209 +144,174 @@ void MqttToolWindow::onOpen()
 {
     // 中文默认字体：子控件继承，避免未设字体的控件画成方框
     lv_obj_set_style_text_font(_window->get(), tb::fontBody(), 0);
-    mclog::tagInfo(_tag, "on open");
     _window->setScrollbarMode(LV_SCROLLBAR_MODE_OFF);
+    mclog::tagInfo(_tag, "on open");
+
     _msg_count = 0;
-
-    _title_label = std::make_unique<Label>(_window->get());
-    _title_label->align(LV_ALIGN_TOP_LEFT, 24, 12);
-    _title_label->setText("MQTT Tool");
-    _title_label->setTextFont(tb::fontTitle());
-    _title_label->setTextColor(lv_color_hex(tb::text()));
-
-    _status_label = std::make_unique<Label>(_window->get());
-    _status_label->align(LV_ALIGN_TOP_RIGHT, -24, 16);
-    _status_label->setText("idle | broker.emqx.io");
-    _status_label->setTextFont(tb::fontBody());
-    _status_label->setTextColor(lv_color_hex(tb::textDim()));
-
-    // ---- broker / topic 配置行 ----
-    auto bl = std::make_unique<Label>(_window->get());
-    bl->align(LV_ALIGN_TOP_LEFT, 24, 64);
-    bl->setText("服务器");
-    bl->setTextFont(tb::fontBody());
-    bl->setTextColor(lv_color_hex(tb::textDim()));
-
-    _broker_input = std::make_unique<TextArea>(_window->get());
-    _broker_input->setSize(400, 48);
-    _broker_input->align(LV_ALIGN_TOP_LEFT, 120, 56);
-    _broker_input->setOneLine(true);
-    _broker_input->setBorderWidth(1);
-    _broker_input->setBorderColor(lv_color_hex(tb::border()));
-    _broker_input->setBgColor(lv_color_hex(tb::surface()));
-    _broker_input->setTextFont(tb::fontSm());
-    _broker_input->setTextColor(lv_color_hex(tb::text()));
-    _broker_input->setText("mqtt://broker.emqx.io:1883");
-    tool_kbd::attach(_broker_input->get());
-
-    auto tl = std::make_unique<Label>(_window->get());
-    tl->align(LV_ALIGN_TOP_LEFT, 552, 64);
-    tl->setText("主题");
-    tl->setTextFont(tb::fontBody());
-    tl->setTextColor(lv_color_hex(tb::textDim()));
-
-    _topic_input = std::make_unique<TextArea>(_window->get());
-    _topic_input->setSize(260, 48);
-    _topic_input->align(LV_ALIGN_TOP_LEFT, 640, 56);
-    _topic_input->setOneLine(true);
-    _topic_input->setBorderWidth(1);
-    _topic_input->setBorderColor(lv_color_hex(tb::border()));
-    _topic_input->setBgColor(lv_color_hex(tb::surface()));
-    _topic_input->setTextFont(tb::fontSm());
-    _topic_input->setTextColor(lv_color_hex(tb::text()));
-    _topic_input->setText("tab5/#");
-    tool_kbd::attach(_topic_input->get());
-
-    _btn_apply_cfg = std::make_unique<Button>(_window->get());
-    _btn_apply_cfg->setSize(140, 48);
-    _btn_apply_cfg->align(LV_ALIGN_TOP_LEFT, 920, 56);
-    _btn_apply_cfg->setBgColor(lv_color_hex(tb::raised()));
-    _btn_apply_cfg->setRadius(tb::RadiusMd);
-    _btn_apply_cfg->label().setTextFont(tb::fontBody());
-    _btn_apply_cfg->label().setTextColor(lv_color_hex(tb::accent()));
-    _btn_apply_cfg->label().setText("Connect");
-    _btn_apply_cfg->onClick().connect([&]() {
-        audio::play_next_tone_progression();
-        const char* b = lv_textarea_get_text(_broker_input->get());
-        const char* t = lv_textarea_get_text(_topic_input->get());
-        if (b && b[0]) _broker_uri = b;
-        if (t && t[0]) _sub_topic = t;
-        _rx_panel->addText("\n[cfg] broker/topic updated (reconnect to apply)\n");
-    });
-
-    _rx_panel = std::make_unique<TextArea>(_window->get());
-    _rx_panel->setSize(1132, 332);
-    _rx_panel->align(LV_ALIGN_TOP_LEFT, 24, 112);
-    _rx_panel->setMaxLength(4096);
-    _rx_panel->setCursorClickPos(false);
-    _rx_panel->setText("Broker: broker.emqx.io:1883\nTopic: tab5/#\n\nConnect to begin.\n");
-    _rx_panel->setPasswordMode(false);
-    _rx_panel->setOneLine(false);
-    _rx_panel->setBorderWidth(1);
-    _rx_panel->setBorderColor(lv_color_hex(tb::border()));
-    _rx_panel->setBgColor(lv_color_hex(tb::surface()));
-    _rx_panel->setTextFont(tb::fontBody());
-    _rx_panel->setTextColor(lv_color_hex(tb::text()));
-    _rx_panel->setScrollbarMode(LV_SCROLLBAR_MODE_AUTO);
-
-    // TX 自定义发布输入行
-    _tx_input = std::make_unique<TextArea>(_window->get());
-    _tx_input->setSize(840, 52);
-    _tx_input->align(LV_ALIGN_TOP_LEFT, 24, 456);
-    lv_textarea_set_placeholder_text(_tx_input->get(), "payload to publish...");
-    _tx_input->setOneLine(true);
-    _tx_input->setBorderWidth(1);
-    _tx_input->setBorderColor(lv_color_hex(tb::border()));
-    _tx_input->setBgColor(lv_color_hex(tb::surface()));
-    _tx_input->setTextFont(tb::fontBody());
-    _tx_input->setTextColor(lv_color_hex(tb::text()));
-    tool_kbd::attach(_tx_input->get());
-
-    // 自定义发布按钮（TX 行右侧）
-    _btn_pub_custom = std::make_unique<Button>(_window->get());
-    _btn_pub_custom->setSize(292, 52);
-    _btn_pub_custom->align(LV_ALIGN_TOP_LEFT, 880, 456);
-    _btn_pub_custom->setBgColor(lv_color_hex(tb::raised()));
-    _btn_pub_custom->setRadius(tb::RadiusMd);
-    _btn_pub_custom->label().setTextFont(tb::fontBody());
-    _btn_pub_custom->label().setText("Publish Custom");
-    _btn_pub_custom->onClick().connect([&]() {
-        audio::play_next_tone_progression();
-        if (!_connected) {
-            pushEvent("[not connected]");
-            return;
+    // 丢掉上次留下的旧事件，免得一开页就涌出一堆历史
+    {
+        std::lock_guard<std::mutex> lock(_rx_mutex);
+        while (!_rx_packets.empty()) {
+            _rx_packets.pop();
         }
-        const char* payload = lv_textarea_get_text(_tx_input->get());
-        if (payload && strlen(payload) > 0) {
-            esp_mqtt_client_publish((esp_mqtt_client_handle_t)_client, _PUB_TOPIC, payload, 0, 1, 0);
-            std::string ev = "\n[pub ";
-            ev += _PUB_TOPIC;
-            ev += "] ";
-            ev += payload;
-            pushEvent(ev);
+    }
+
+    // ==================== 左列 ====================
+    // 报文区（只读显示，不挂软键盘）
+    _rx_panel = tl::makePanel(_window->get());
+
+    // 发送行：输入框 + 发布按钮
+    tl::SendRow send       = tl::makeSendRow(_window->get(), "发布内容…");
+    _tx_input              = std::move(send.input);
+    _btn_send_tx           = std::move(send.button);
+    _btn_send_tx->label().setText("发布");
+    _btn_send_tx->onClick().connect([&]() {
+        audio::play_next_tone_progression();
+        const char* txt = lv_textarea_get_text(_tx_input->get());
+        if (txt && txt[0]) {
+            publish(txt);
+            lv_textarea_set_text(_tx_input->get(), "");
         }
     });
 
-    auto make_btn = [&](int x, const char* text, uint32_t color) {
-        auto b = std::make_unique<Button>(_window->get());
-        b->setSize(208, 56);
-        b->align(LV_ALIGN_BOTTOM_LEFT, x, -18);
-        b->setBgColor(lv_color_hex(color));
-        b->setRadius(tb::RadiusMd);
-        b->label().setTextFont(tb::fontBody());
-        b->label().setTextColor(lv_color_hex(tb::accent()));
-        b->label().setText(text);
-        return b;
-    };
+    // ==================== 右列 ====================
+    // 状态：圆点 + 文字（圆点是画出来的，不依赖字体字形）
+    _status_label = tl::makeStatus(_window->get(), &_status_dot);
+    _status_label->setText("未连接");
 
-    _btn_connect = make_btn(30, "连接", tb::raised());
-    _btn_connect->onClick().connect([&]() {
+    // 设置行 0/1/2：可编辑输入（服务器 / 订阅 / 发布主题），值要手打就用这三个
+    // 界面显示短地址；完整 URI（补 scheme）在连接时拼
+    const std::string uri0 = _broker_uri.empty() ? _MQTT_HOST_INIT : _broker_uri;
+    const std::string sub0 = _sub_topic.empty() ? _MQTT_SUB_INIT : _sub_topic;
+    const std::string pub0 = _pub_topic.empty() ? _MQTT_PUB_INIT : _pub_topic;
+    _row_broker = tl::makeRowInput(_window->get(), tl::rowY(0), "服务器", uri0.c_str());
+    _row_sub    = tl::makeRowInput(_window->get(), tl::rowY(1), "订阅", sub0.c_str());
+    _row_pub    = tl::makeRowInput(_window->get(), tl::rowY(2), "发布主题", pub0.c_str());
+
+    // 设置行 3：QoS（0/1/2 循环）
+    _row_qos = tl::makeRow(_window->get(), tl::rowY(3), "QoS");
+    _row_qos->label().setText("1");
+    _row_qos->onClick().connect([&]() {
         audio::play_next_tone_progression();
-        if (_client) {
-            esp_mqtt_client_disconnect((esp_mqtt_client_handle_t)_client);
-            esp_mqtt_client_destroy((esp_mqtt_client_handle_t)_client);
-            _client = nullptr;
-            _connected = false;
-            setStatus("idle");
-            _rx_panel->addText("\n[client destroyed]\n");
-            _btn_connect->label().setText("Connect");
-            return;
-        }
-        esp_mqtt_client_config_t cfg = {};
-        cfg.broker.address.uri = _broker_uri.c_str();
-        esp_mqtt_client_handle_t c = esp_mqtt_client_init(&cfg);
-        if (!c) {
-            _rx_panel->addText("\n[mqtt init failed]\n");
-            return;
-        }
-        esp_mqtt_client_register_event(c, MQTT_EVENT_ANY, MqttToolWindow::mqttEventHandler, this);
-        esp_mqtt_client_start(c);
-        _client = c;
-        setStatus("connecting...");
-        _btn_connect->label().setText("Disconnect");
-        _rx_panel->addText("\n[connecting ");
-        _rx_panel->addText(_broker_uri.c_str());
-        _rx_panel->addText("]\n");
+        _qos = (_qos + 1) % 3;
+        refreshUi();
     });
 
-    _btn_sub = make_btn(255, "Subscribe", tb::raised());
-    _btn_sub->onClick().connect([&]() {
+    // 设置行 4：消息数（纯展示，不可点 —— 不做假的"看着能按"）
+    tl::makeInfoRow(_window->get(), tl::rowY(4), "消息数", "0", &_info_msg);
+
+    // 主操作：连接 / 断开
+    _btn_run = tl::makePrimary(_window->get(), "连接");
+    _btn_run->onClick().connect([&]() {
         audio::play_next_tone_progression();
-        if (!_client) {
-            _rx_panel->addText("\n[connect first]\n");
-            return;
-        }
-        esp_mqtt_client_subscribe((esp_mqtt_client_handle_t)_client, _sub_topic.c_str(), 1);
-        _rx_panel->addText("\n[subscribed ");
-        _rx_panel->addText(_SUB_TOPIC);
-        _rx_panel->addText("]\n");
+        setConnected(_client == nullptr);
     });
 
-    _btn_pub = make_btn(480, "Publish", tb::raised());
-    _btn_pub->onClick().connect([&]() {
-        audio::play_next_tone_progression();
-        if (!_client) {
-            _rx_panel->addText("\n[connect first]\n");
-            return;
-        }
-        const char* payload = "hello from Tab5 toolbox";
-        int msg_id = esp_mqtt_client_publish((esp_mqtt_client_handle_t)_client, _PUB_TOPIC, payload, 0, 1, 0);
-        char buf[96];
-        snprintf(buf, sizeof(buf), "\n[pub %s id=%d]\n", _PUB_TOPIC, msg_id);
-        _rx_panel->addText(buf);
-    });
-
-    _btn_clear = make_btn(705, "Clear", 0x4A3A3A);
+    // 清空 / 关闭
+    _btn_clear = tl::makeAction(_window->get(), 0, "清空", tb::neutral(), tb::text());
     _btn_clear->onClick().connect([&]() {
         audio::play_next_tone_progression();
         _rx_panel->setText("");
+        _msg_count = 0;
+        refreshUi();
     });
 
-    _btn_close = make_btn(960, "Close", tb::danger());
+    _btn_close = tl::makeAction(_window->get(), 1, "关闭", tb::danger(), tb::text());
     _btn_close->onClick().connect([&]() {
         audio::play_next_tone_progression();
         close();
     });
+
+    refreshUi();
+    mclog::tagInfo(_tag, "layout ready");
+}
+
+// 连接 / 断开（主操作按钮的全部逻辑，原来散在按钮回调里的挪到这里）
+void MqttToolWindow::setConnected(bool on)
+{
+    if (!on) {
+        if (_client) {
+            esp_mqtt_client_disconnect((esp_mqtt_client_handle_t)_client);
+            esp_mqtt_client_destroy((esp_mqtt_client_handle_t)_client);
+            _client = nullptr;
+        }
+        _connected = false;
+        pushEvent("[已断开]");
+        refreshUi();
+        mclog::tagInfo(_tag, "client stopped");
+        return;
+    }
+
+    if (_client) {
+        return;   // 已经有一个 client 在跑，不重入
+    }
+
+    // 每次启动都重新读界面值：停下后改了服务器/主题，再启动就该用新值
+    const char* bv = _row_broker ? lv_textarea_get_text(_row_broker->get()) : nullptr;
+    const char* sv = _row_sub ? lv_textarea_get_text(_row_sub->get()) : nullptr;
+    const char* pv = _row_pub ? lv_textarea_get_text(_row_pub->get()) : nullptr;
+    {
+        std::string v = (bv && bv[0]) ? bv : _MQTT_HOST_INIT;
+        // 没写 scheme 就补上 mqtt://（用户只需填 host 或 host:port）
+        if (v.find("://") == std::string::npos) {
+            v = "mqtt://" + v;
+        }
+        _broker_uri = v;
+    }
+    _sub_topic  = (sv && sv[0]) ? sv : _MQTT_SUB_INIT;
+    _pub_topic  = (pv && pv[0]) ? pv : _MQTT_PUB_INIT;
+
+    esp_mqtt_client_config_t cfg = {};
+    cfg.broker.address.uri        = _broker_uri.c_str();
+    esp_mqtt_client_handle_t c    = esp_mqtt_client_init(&cfg);
+    if (c == nullptr) {
+        pushEvent("[mqtt 初始化失败]");
+        refreshUi();
+        return;
+    }
+
+    // _client 必须在 start 之前赋值 —— CONNECTED 回调要用它去 subscribe
+    _client    = c;
+    _connected = false;
+    esp_mqtt_client_register_event(c, MQTT_EVENT_ANY, MqttToolWindow::mqttEventHandler, this);
+    esp_mqtt_client_start(c);
+
+    char m[160];
+    snprintf(m, sizeof(m), "[正在连接 %s]", _broker_uri.c_str());
+    pushEvent(m);
+    refreshUi();
+}
+
+// 发布：主题取界面当前值，QoS 用 _qos
+void MqttToolWindow::publish(const char* payload)
+{
+    if (payload == nullptr || payload[0] == '\0') {
+        return;
+    }
+
+    if (_row_pub) {
+        const char* t = lv_textarea_get_text(_row_pub->get());
+        if (t && t[0]) {
+            _pub_topic = t;   // 改了主题不用重连就能生效
+        }
+    }
+
+    if (_client == nullptr || !_connected) {
+        // 没连上就不装作发出去了，报文区如实写一条
+        std::string ev = "[未连接] ";
+        ev += payload;
+        pushEvent(ev);
+        refreshUi();
+        return;
+    }
+
+    esp_mqtt_client_publish((esp_mqtt_client_handle_t)_client, _pub_topic.c_str(), payload, 0, _qos, 0);
+
+    std::string ev = "\n[pub ";
+    ev += _pub_topic;
+    ev += "] ";
+    ev += payload;
+    pushEvent(ev);
 }
 
 void MqttToolWindow::onUpdate()
@@ -321,14 +329,20 @@ void MqttToolWindow::onUpdate()
             _rx_packets.pop();
         }
     }
-    if (!batch.empty()) {
-        _rx_panel->addText(batch.c_str());
-        const char* cur = lv_textarea_get_text(_rx_panel->get());
-        if (cur && strlen(cur) > _RX_MAX_CHARS) {
-            const char* tail = cur + strlen(cur) - _RX_MAX_CHARS;
-            _rx_panel->setText(tail);
-        }
+    if (batch.empty()) {
+        return;
     }
+
+    _rx_panel->addText(batch.c_str());
+    // 防 TextArea 无限增长：超长只留尾部
+    const char* cur = lv_textarea_get_text(_rx_panel->get());
+    if (cur && strlen(cur) > _RX_MAX_CHARS) {
+        _rx_panel->setText(cur + strlen(cur) - _RX_MAX_CHARS);
+    }
+    lv_obj_scroll_to_y(_rx_panel->get(), LV_COORD_MAX, LV_ANIM_OFF);
+
+    // 事件推动状态显示（已连接 / 连接中… / 未连接）+ 消息数
+    refreshUi();
 }
 
 void MqttToolWindow::onClose()
@@ -339,7 +353,59 @@ void MqttToolWindow::onClose()
         esp_mqtt_client_destroy((esp_mqtt_client_handle_t)_client);
         _client = nullptr;
     }
+    _connected = false;
+    {
+        std::lock_guard<std::mutex> lock(_rx_mutex);
+        while (!_rx_packets.empty()) {
+            _rx_packets.pop();
+        }
+    }
+}
 
+// 右列状态 / 值统一在这里刷新（QoS 值、消息数、状态行、主按钮文字与配色）
+void MqttToolWindow::refreshUi()
+{
+    if (!_row_qos || !_status_label || !_btn_run) {
+        return;
+    }
+
+    char b[160];
+
+    snprintf(b, sizeof(b), "%d", _qos);
+    _row_qos->label().setText(b);
+
+    if (_info_msg) {
+        snprintf(b, sizeof(b), "%lu", (unsigned long)_msg_count);
+        lv_label_set_text(_info_msg, b);
+    }
+
+    if (_client == nullptr) {
+        _status_label->setText("未连接");
+        _status_label->setTextColor(lv_color_hex(tb::textDim()));
+        if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
+
+        _btn_run->label().setText("连接");
+        _btn_run->setBgColor(lv_color_hex(tb::raised()));
+        _btn_run->label().setTextColor(lv_color_hex(tb::accent()));
+        return;
+    }
+
+    // 有 client：要么已连上，要么正在连（esp-mqtt 掉线会自动重连，
+    // 所以"client 还在但没连上"显示成「连接中…」是诚实的）
+    _btn_run->label().setText("断开");
+    _btn_run->setBgColor(lv_color_hex(tb::danger()));
+    _btn_run->label().setTextColor(lv_color_hex(tb::text()));
+
+    if (_connected) {
+        snprintf(b, sizeof(b), "已连接 %s", host_of(_broker_uri).c_str());
+        _status_label->setText(b);
+        _status_label->setTextColor(lv_color_hex(tb::success()));
+        if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::success()), 0);
+    } else {
+        _status_label->setText("连接中…");
+        _status_label->setTextColor(lv_color_hex(tb::warning()));
+        if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::warning()), 0);
+    }
 }
 
 #endif  // CONFIG_IDF_TARGET_ESP32P4

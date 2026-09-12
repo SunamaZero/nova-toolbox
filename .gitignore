@@ -1,7 +1,17 @@
+# 构建产物
+build
+build.clang
+dependencies
 .cache
 .vscode
-build
-dependencies
-.DS_Store
+.idea
+
+# Python / 虚拟环境
 __pycache__/
 *.pyc
+.venv
+venv
+
+# 系统
+.DS_Store
+*.old

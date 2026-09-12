@@ -40,6 +40,31 @@ inline uint32_t success()  { return 0x9BB24A; }  // 成功/已连接
 inline uint32_t warning()  { return 0xCE8E1E; }  // 警告/连接中
 inline uint32_t danger()   { return 0xB8472F; }  // 危险/关闭
 inline uint32_t info()     { return 0x6E7A45; }  // 信息（暗橄榄）
+inline uint32_t neutral()  { return 0x3A3326; }  // 中性按钮（清空/重置等次要操作）
+inline uint32_t sunken()   { return 0x0E0C08; }  // 凹陷底（日志/终端内容区）
+inline uint32_t successDim() { return 0x22301A; }  // 成功色暗调（状态胶囊底）
+
+// ---- 工具页骨架（所有工具页共用，保证同构）----
+// 之前各页各写一套坐标（UART 按钮间距 185、UDP 225），放在一起就不像一套产品。
+constexpr int ToolTitleY = 12;                 // 标题行
+constexpr int ToolRowY   = 56;                 // 配置行 Y
+constexpr int ToolRowH   = 48;                 // 配置行控件统一高度
+constexpr int ToolRxY    = 112;                // 接收区 Y
+constexpr int ToolRxH    = 332;                // 接收区高
+constexpr int ToolRxW    = 1132;               // 接收区宽（内容区宽 - 2*24）
+constexpr int ToolTxY    = 456;                // 发送行 Y
+constexpr int ToolTxH    = 52;                 // 发送行高
+constexpr int ToolPadX   = 24;                 // 页面左右内边距
+
+// 底部操作条：按钮等宽等距，Close 固定最右
+constexpr int BtnW        = 168;
+constexpr int BtnGap      = 16;
+constexpr int BtnX0       = 24;
+constexpr int BtnBottomY  = -24;               // 距页面底
+constexpr int BtnXRight   = 1180 - ToolPadX - BtnW;   // 988
+// 没有"发送行"的工具页（TCP/HTTP），面板直接填到按钮行上方 —— 否则中间空一大片
+constexpr int ToolRxHNoTx = 414;
+inline int btnX(int i) { return BtnX0 + i * (BtnW + BtnGap); }   // 24,208,392,576,760
 
 // ==================== 间距 token（4pt 网格）====================
 constexpr int SpaceXs = 4;
@@ -77,6 +102,8 @@ inline const lv_font_t* fontBody()  { return &tb_cn_16; }  // 正文/按钮（�
 inline const lv_font_t* fontMid()   { return &tb_cn_16; }
 inline const lv_font_t* fontTitle() { return &tb_cn_16; }  // 标题（中文，靠颜色区分层次）
 inline const lv_font_t* fontBig()   { return &tb_cn_16; }
+// 导航标签：14px 等宽拉丁（窄，保证 SETTINGS 这类长标签不截断）
+inline const lv_font_t* fontLabel() { return &ibm_plex_mono_14; }
 
 // ==================== 通用样式助手 ====================
 // 卡片：surface 底 + border 描边 + RadiusMd
@@ -92,6 +119,17 @@ inline void styleCard(lv_obj_t* o)
 }
 
 // 输入框：surface 底 + border + RadiusSm + 内边距 12
+// 只读显示区（报文 / 日志）：去掉"点击获得焦点"。
+// 否则触摸点一下就会聚焦 → 出现光标、状态变化，看着像可以输入。
+// 保留 CLICKABLE，手指拖动照样能滚。
+inline void makeReadOnly(lv_obj_t* o)
+{
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    lv_obj_add_flag(o, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_state(o, LV_STATE_FOCUSED);
+    lv_group_remove_obj(o);   // 不在实体键盘的 tab 焦点链里
+}
+
 inline void styleInput(lv_obj_t* o)
 {
     lv_obj_set_style_bg_color(o, lv_color_hex(surface()), 0);
@@ -100,13 +138,26 @@ inline void styleInput(lv_obj_t* o)
     lv_obj_set_style_border_width(o, 1, 0);
     lv_obj_set_style_border_color(o, lv_color_hex(border()), 0);
     lv_obj_set_style_pad_hor(o, SpaceMd - 4, 0);
-    lv_obj_set_style_pad_ver(o, SpaceXs, 0);
-    // 文字：主文字色（对比度 13.4:1）—— 不设的话走 LVGL 默认灰，贴在深底上看不清
+    // 垂直居中：靠 pad_top 把单行文本推到框的垂直中间（不设就贴顶边）
+    // 水平：左对齐 —— 输入框内容应按阅读习惯从左起，居中会让人以为没对齐
+    lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_LEFT, 0);
+    // 必须先把刚设的尺寸真正应用，否则 get_height 拿到的是样式默认高（偏大），
+    // 算出的 pad_top 会把文字推到框外、压住下边框。
+    lv_obj_update_layout(o);
+    const lv_font_t* f = lv_obj_get_style_text_font(o, LV_PART_MAIN);
+    int line_h = f ? lv_font_get_line_height(f) : 20;
+    int h = lv_obj_get_height(o);
+    int pad = (h - line_h) / 2;
+    lv_obj_set_style_pad_top(o, pad > 0 ? pad : 0, 0);
+    lv_obj_set_style_pad_bottom(o, 0, 0);
+    // 文字：主文字色（对比度 13.4:1）
     lv_obj_set_style_text_color(o, lv_color_hex(text()), 0);
-    // 占位符：次文字色（6.25:1），与正文区分但可辨
     lv_obj_set_style_text_color(o, lv_color_hex(textDim()), LV_PART_TEXTAREA_PLACEHOLDER);
-    // 光标用强调色，定位清晰
-    lv_obj_set_style_border_color(o, lv_color_hex(accent()), LV_PART_CURSOR);
+    // 光标：LVGL 把光标画成 LV_PART_CURSOR 的矩形（lv_textarea.c 用 bg_opa 判定是否画），
+    // 只设 border_color + border_width=0 + bg_opa=0 → 光标完全看不见。
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, LV_PART_CURSOR);
+    lv_obj_set_style_bg_color(o, lv_color_hex(accent()), LV_PART_CURSOR);
+    lv_obj_set_style_border_width(o, 0, LV_PART_CURSOR);
 }
 
 // 主操作按钮：accent 描边 + raised 底

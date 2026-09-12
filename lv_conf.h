@@ -143,6 +143,7 @@
 	#define LV_DRAW_SW_SUPPORT_L8			1
 	#define LV_DRAW_SW_SUPPORT_AL88			1
 	#define LV_DRAW_SW_SUPPORT_A8			1
+	#define LV_DRAW_SW_SUPPORT_A4			1
 	#define LV_DRAW_SW_SUPPORT_I1			1
 
 	/* Set the number of draw unit.
@@ -510,10 +511,10 @@
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.
  *Compiler error will be triggered if a font needs it.*/
-#define LV_FONT_FMT_TXT_LARGE 0
+#define LV_FONT_FMT_TXT_LARGE 1
 
 /*Enables/disables support for compressed fonts.*/
-#define LV_USE_FONT_COMPRESSED 0
+#define LV_USE_FONT_COMPRESSED 1
 
 /*Enable drawing placeholders when glyph dsc is not found*/
 #define LV_USE_FONT_PLACEHOLDER 1
@@ -845,7 +846,7 @@
  *==================*/
 
 /*1: Enable API to take snapshot for object*/
-#define LV_USE_SNAPSHOT 0
+#define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
 #define LV_USE_SYSMON   0
@@ -948,7 +949,7 @@
  *==================*/
 
 /*Use SDL to open window on PC and handle mouse and keyboard*/
-#define LV_USE_SDL              1
+#define LV_USE_SDL              0
 #if LV_USE_SDL
     #define LV_SDL_INCLUDE_PATH     <SDL2/SDL.h>
     #define LV_SDL_RENDER_MODE      LV_DISPLAY_RENDER_MODE_DIRECT   /*LV_DISPLAY_RENDER_MODE_DIRECT is recommended for best performance*/
@@ -960,7 +961,7 @@
 #endif
 
 /*Use X11 to open window on Linux desktop and handle mouse and keyboard*/
-#define LV_USE_X11              0
+#define LV_USE_X11              1
 #if LV_USE_X11
     #define LV_X11_DIRECT_EXIT         1  /*Exit the application when all X11 windows have been closed*/
     #define LV_X11_DOUBLE_BUFFER       1  /*Use double buffers for rendering*/

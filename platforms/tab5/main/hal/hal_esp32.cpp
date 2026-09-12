@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "hal/hal_esp32.h"
+#include "apps/app_launcher/view/tool_logsys.h"   // 日志系统（联网可查）
 
 // LVGL 官方自带中文字体（LV_FONT_SIMSUN_16_CJK=y）
 extern "C" {
@@ -51,6 +52,7 @@ static void lvgl_read_cb(lv_indev_t* indev, lv_indev_data_t* data)
 
 void HalEsp32::init()
 {
+    logsys::init();   // 最先挂日志钩子，后面所有日志都可远程查
     mclog::tagInfo(_tag, "init");
 
     mclog::tagInfo(_tag, "camera init");
@@ -137,6 +139,10 @@ void HalEsp32::init()
     bsp_display_unlock();
 
     // Tab5 官方键盘（I2C 0x6D，没插就静默跳过）
+    // WiFi STA 初始化（AP 已按设计移除；放这里保证一定执行，不依赖动画流程）
+    mclog::tagInfo(_tag, "wifi init (STA)");
+    wifi_init();
+
     if (keyboardInit()) {
         keyboardRegisterLvglIndev(lvDisp);
     } else {

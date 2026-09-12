@@ -44,7 +44,7 @@ dependencies:
       type: service
     version: 0.5.3
   espressif/eppp_link:
-    component_hash: 587abf150563ee0efeeba88e3c7cf46675ab5bd752a788f4b9c88a54649221dd
+    component_hash: c1369b37f2b0b427b198ae14e07e7547d3da92b95fe4dc7f949e5de560b35f21
     dependencies:
     - name: espressif/esp_serial_slave_link
       registry_url: https://components.espressif.com
@@ -56,7 +56,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.1.0
+    version: 1.1.6
   espressif/esp_codec_dev:
     component_hash: 18c22e1411224ba6103c4aca1b01bc740af33926756e9e106370a477d52bcba1
     dependencies:
@@ -116,7 +116,7 @@ dependencies:
     - esp32p4
     version: 1.0.3
   espressif/esp_lcd_touch:
-    component_hash: 779b4ba2464a3ae85681e4b860caa5fdc35801458c23f3039ee761bae7f442a4
+    component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
     dependencies:
     - name: idf
       require: private
@@ -124,7 +124,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.1.2
+    version: 1.2.1
   espressif/esp_lcd_touch_gt911:
     component_hash: acc1c184358aa29ef72506f618c9c76a8cc2bf12af38a2bff3d44d84f3a08857
     dependencies:
@@ -158,7 +158,7 @@ dependencies:
       type: service
     version: 1.0.0
   espressif/esp_serial_slave_link:
-    component_hash: d8c13c033a7604e9333b5d8ea45e0d6fec908fd552df7db20d33dd8d6916528d
+    component_hash: ac1776806de0a6e371c84e87898bb983e19ce62aa7f1e2e5c4a3b0234a575d2c
     dependencies:
     - name: idf
       require: private
@@ -166,7 +166,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.1.0~1
+    version: 1.1.2
   espressif/esp_wifi_remote:
     component_hash: f772731a8cc7361a3eb416eac94ac46cf85369cb996c5a5fc9245a07f241fee2
     dependencies:
@@ -197,6 +197,66 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 3.0.0
+  espressif/usb_host_cdc_acm:
+    component_hash: 5bc1372b46de79ccae1dd17de48e30dfa1e8ab75269c2ebf54da01370f9e42fb
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    - name: espressif/usb
+      registry_url: https://components.espressif.com
+      require: public
+      rules:
+      - if: idf_version >=6.0
+      - if: target not in ["linux"]
+      version: ^1.0.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    targets:
+    - esp32s2
+    - esp32s3
+    - esp32p4
+    - esp32h4
+    - esp32s31
+    - linux
+    version: 2.4.1
+  espressif/usb_host_ch34x_vcp:
+    component_hash: bf5e9c1c4e6e0a617cc268978b7ae4537d559e6c4b3bdae857dd05b703b4283c
+    dependencies:
+    - name: espressif/usb_host_cdc_acm
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^2.1.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.2.1
+  espressif/usb_host_cp210x_vcp:
+    component_hash: c0404c598e2620fe88c35b5bf24d8e3b3ded41d9946fc865843be7f2f75da40e
+    dependencies:
+    - name: espressif/usb_host_cdc_acm
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^2.1.0
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.2.0
+  espressif/usb_host_ftdi_vcp:
+    component_hash: efa8896db30feeb44aa71b13ef4488bf85af650589c66f79c35aaee75b105ae1
+    dependencies:
+    - name: espressif/usb_host_cdc_acm
+      registry_url: https://components.espressif.com
+      require: public
+      version: ^2.3.0
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.1.1
   espressif/usb_host_hid:
     component_hash: eabf03fe3cb1bdb5325d2725f420c6324c3e150033d893ce3737222929455a55
     dependencies:
@@ -211,6 +271,17 @@ dependencies:
     - esp32s3
     - esp32p4
     version: 1.0.3
+  espressif/usb_host_vcp:
+    component_hash: af3484b5424231ff3102e149ea6f1146e97faa9fbbe0af3684d234f10d1a919e
+    dependencies:
+    - name: espressif/usb_host_cdc_acm
+      registry_url: https://components.espressif.com
+      require: public
+      version: '>=1.0.4,<3.0.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.0~6
   idf:
     source:
       type: idf
@@ -235,9 +306,14 @@ direct_dependencies:
 - espressif/esp_lcd_touch_st7123
 - espressif/esp_wifi_remote
 - espressif/led_strip
+- espressif/usb_host_cdc_acm
+- espressif/usb_host_ch34x_vcp
+- espressif/usb_host_cp210x_vcp
+- espressif/usb_host_ftdi_vcp
 - espressif/usb_host_hid
+- espressif/usb_host_vcp
 - idf
 - lvgl/lvgl
-manifest_hash: e057e8886cf9f2347aa190584b841da208b81ce73a0b80bf5d12a7a22e4c9d58
+manifest_hash: 114e3bf573598cd719d43de668447ba8c330cf13192a0bde82b4f8c4af15d0a4
 target: esp32p4
 version: 2.0.0

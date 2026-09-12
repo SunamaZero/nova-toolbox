@@ -3,7 +3,11 @@
 // 依赖：CONFIG_LV_USE_SNAPSHOT=y（LVGL 官方抓屏 API）
 // 流程：lv_snapshot_take → 逐像素缩放采样 → base64 → 串口分行输出
 
-#include "sdkconfig.h"     // CONFIG_IDF_TARGET_ESP32P4 必须在 #ifdef 前可见
+#if defined(__has_include)
+#  if __has_include("sdkconfig.h")
+#    include "sdkconfig.h"     // CONFIG_IDF_TARGET_ESP32P4 必须在 #ifdef 前可见
+#  endif
+#endif
 #include "tool_screenshot.h"
 
 #ifdef CONFIG_IDF_TARGET_ESP32P4

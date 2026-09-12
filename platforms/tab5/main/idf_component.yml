@@ -8,3 +8,8 @@ dependencies:
   chmorgan/esp-file-iterator: 1.0.0
   espressif/led_strip: 3.0.0
   espressif/esp_lcd_ili9881c: ^1.0.1
+  espressif/usb_host_vcp: ^1.0.0
+  espressif/usb_host_cdc_acm: ^2.0.0
+  espressif/usb_host_ch34x_vcp: '*'
+  espressif/usb_host_cp210x_vcp: '*'
+  espressif/usb_host_ftdi_vcp: '*'

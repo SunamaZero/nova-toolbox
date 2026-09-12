@@ -38,4 +38,7 @@ private:
     uint32_t _tick   = 0;
 };
 
+// 调试用：直接切到指定页（桌面模拟器无法点击导航）
+void toolboxDebugShowPage(int page);
+
 }  // namespace launcher_view

@@ -105,6 +105,14 @@ private:
     bool setRs485Baudrate(uint32_t baud) override;
     uint32_t getRs485Baudrate() override;
     bool setRs485Config(uint32_t baud, int data_bits, int parity, int stop_bits) override;
+
+    // USB 串口（外接 USB 转 485/232 适配器）
+    bool usbSerialOpenAsync(int channel) override;
+    void usbSerialClose() override;
+    int  usbSerialState() override;
+    bool usbSerialTakeDisconnected() override;
+    bool usbSerialSetLineCoding(uint32_t baud, int data_bits, int parity, int stop_bits) override;
+    void usbSerialSend(const std::string& msg, bool newLine = true) override;
     bool wifi_init();
     void imu_init();
     void update_system_time();
