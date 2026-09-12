@@ -63,35 +63,48 @@ bool s_inited = false;
 // ---------------------------------------------------------------------------
 void time_sync_task(void*)
 {
-    // 时区不在这里设 —— 见 init()。这里只负责 SNTP 校时。
+    // 时区不在这里设 —— 见 init()。这里只负责 SNTP 校时 + 回写板载 RTC。
     //
-    // 【必须先等网络就绪】esp_sntp_init() 内部会调 lwIP 的 tcpip_callback；
-    // 网络栈没起来就调 -> assert failed: tcpip_callback (Invalid mbox) -> 开机崩溃重启。
-    // 这个坑潜伏很久：以前开机时 RTC 里存着上次校时的时间，下面那个
-    // "已校时就直接退出" 的判断在第一次循环就为真，SNTP 根本没被调用，所以从没崩过。
-    // 一旦彻底断电（拔电池）-> RTC 清零 -> 判断为假 -> 真的去初始化 SNTP -> 必崩。
-    // 现在先阻塞等 WiFi 连上，与 report_ip_task 同一套做法。
+    // 【一、必须先等网络就绪】
+    // esp_sntp_init() 内部会调 lwIP 的 tcpip_callback；网络栈没起来就调 ->
+    // assert failed: tcpip_callback (Invalid mbox) -> 开机崩溃重启。
+    // 与 report_ip_task 同一套做法。
     while (!GetHAL()->wifiIsStaConnected()) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    bool started = false;
-    int  tries   = 0;
+    // 【二、判断"是否已校时"不能看 time() 的值】
+    // 板载 RX8130 是带电池的独立 RTC，开机时系统时间是从它抄来的
+    // （见 HalEsp32::update_system_time -> settimeofday）。而它自己并不准
+    // （实测快近一个月），所以 'time() > 1700000000' 这种判断会直接为真 ->
+    // 校时任务立刻退出 -> SNTP 从未真正跑过 -> 日志时间戳一直是 RTC 那个错时间。
+    // 正确做法：以 SNTP 的同步状态为准。
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "ntp.aliyun.com");
+    esp_sntp_init();
+
+    int tries = 0;
     for (;;) {
-        if (time(nullptr) > 1700000000) {   // 2023-11 之后视为已校时
-            ESP_LOGI("logsys", "系统时间已同步，日志带时间戳");
+        const time_t now = time(nullptr);
+        if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED && now > 1700000000) {
+            struct tm lt {};
+            localtime_r(&now, &lt);
+            char b[32];
+            strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", &lt);
+            ESP_LOGI("logsys", "SNTP 校时完成，本地时间 %s", b);
+
+            // 【三、回写 RTC】否则下次开机又从这颗不准的 RTC 抄时间。
+            // 存"本地时间" —— 与 update_system_time() 的读法（mktime 按本地时区解）配对。
+            GetHAL()->setRtcTime(lt);
+            ESP_LOGI("logsys", "已回写板载 RTC（离线开机也能有准时间）");
             vTaskDelete(nullptr);
         }
-        if (!started) {
-            esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-            esp_sntp_setservername(0, "ntp.aliyun.com");
-            esp_sntp_init();
-            started = true;
-        } else if (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && ++tries % 10 == 0) {
-            esp_sntp_restart();             // 首次可能网络还没就绪，每 30s 重试
+        if (++tries % 30 == 0) {          // 每 30s 重试一次（首次多半是网络/DNS 还没好）
+            esp_sntp_restart();
+            ESP_LOGW("logsys", "SNTP 尚未同步，重试中（第 %d 次）", tries / 30);
         }
-        vTaskDelay(pdMS_TO_TICKS(3000));
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
