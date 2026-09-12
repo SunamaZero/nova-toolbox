@@ -106,10 +106,12 @@ void LogToolWindow::onOpen()
     _log_box = std::make_unique<Container>(_window->get());
     _log_box->setSize(LeftW, MsgH);
     _log_box->align(LV_ALIGN_TOP_LEFT, LeftX, MsgY);
-    lv_obj_set_style_bg_color(_log_box->get(), lv_color_hex(tb::sunken()), 0);
-    lv_obj_set_style_bg_opa(_log_box->get(), LV_OPA_COVER, 0);
+    // 底色/描边与各工具页的报文面板保持一致（surface + 1px border），
+    // 之前用 sunken 近黑，跟其它页放一起像另一套设计
+    lv_obj_set_style_bg_color(_log_box->get(), lv_color_hex(tb::surface()), 0);
     lv_obj_set_style_border_width(_log_box->get(), 1, 0);
     lv_obj_set_style_border_color(_log_box->get(), lv_color_hex(tb::border()), 0);
+    lv_obj_set_style_bg_opa(_log_box->get(), LV_OPA_COVER, 0);
     lv_obj_set_style_radius(_log_box->get(), tb::RadiusMd, 0);
     lv_obj_set_style_pad_all(_log_box->get(), tb::SpaceMd - 4, 0);
     lv_obj_set_style_pad_row(_log_box->get(), 2, 0);
@@ -121,23 +123,14 @@ void LogToolWindow::onOpen()
     tb::makeReadOnly(_log_box->get());
 
     // ==================== 右列 ====================
-    // 状态：圆点 + 条数（圆点是画出来的，不依赖字体字形）
-    _status_label = std::make_unique<Label>(_window->get());
-    lv_obj_set_size(_status_label->get(), RightW - StatusDotZone, StatusH);
-    _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY);
-    _status_label->setTextFont(tb::fontBody());
+    // 状态行：一律用统一的 tl::makeStatus ——
+    // 以前这里手写了一份（高度 StatusH + 贴顶 + 没设文字色），于是 toolbox_layout.h
+    // 里"一行字高 + 对齐圆点中心线 + 正文色"那套修复根本到不了这一页：
+    // 设备上文字比圆点高约 10px、颜色还掉成 LVGL 默认的中性灰。
+    // 教训：布局代码不许各页复制，几何与配色一律走 tl::。
+    _status_label = tl::makeStatus(_window->get(), &_status_dot);
     lv_label_set_long_mode(_status_label->get(), LV_LABEL_LONG_DOT);
     _status_label->setText("0 条");
-
-    _status_dot = lv_obj_create(_window->get());
-    lv_obj_set_size(_status_dot, StatusDot, StatusDot);
-    lv_obj_align(_status_dot, LV_ALIGN_TOP_LEFT, RightX + tb::SpaceMd, StatusY + (StatusH - StatusDot) / 2);
-    lv_obj_set_style_radius(_status_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(_status_dot, 0, 0);
-    lv_obj_set_style_bg_opa(_status_dot, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
-    lv_obj_clear_flag(_status_dot, LV_OBJ_FLAG_SCROLLABLE);
-    tb::makeReadOnly(_status_dot);
 
     // 设置行构造器（统一：整行按钮 + 左名 + 右值）
     auto make_row = [&](int y, const char* name) {

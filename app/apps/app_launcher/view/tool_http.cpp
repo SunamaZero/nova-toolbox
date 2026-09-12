@@ -261,8 +261,12 @@ void HttpToolWindow::onOpen()
     });
 
     // 纯展示行：不可点（不做"看着能按其实没用"的死按钮）
-    tl::makeInfoRow(_window->get(), tl::rowY(1), "本机地址", "--", &_info_ip);
-    tl::makeInfoRow(_window->get(), tl::rowY(2), "请求数", "0", &_info_req);
+    // 本机地址会显示成 http://192.168.31.145:8080（25 字符），
+    // 和标签挤一行必然重叠 → 用"标签一行 + 值一行"的高行
+    int ry = tl::nextY(tl::rowY(0), tl::RowH);
+    tl::makeInfoRowTall(_window->get(), ry, "本机地址", "--", &_info_ip);
+    ry = tl::nextY(ry, tl::RowHTall);
+    tl::makeInfoRow(_window->get(), ry, "请求数", "0", &_info_req);
     if (_info_ip) {
         // http://192.168.x.x:12345 比行宽长：限定宽度 + 超出省略，别越出卡片
         lv_obj_set_width(_info_ip, tl::RightW - 96);

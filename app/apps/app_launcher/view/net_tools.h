@@ -181,7 +181,6 @@ private:
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::TextArea> _row_sub;       // 订阅主题（可编辑）
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::TextArea> _row_pub;       // 发布主题（可编辑）
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Button>   _row_qos;       // QoS（循环）
-    lv_obj_t*                                              _info_msg = nullptr;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::TextArea> _rx_panel;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::TextArea> _tx_input;
     std::unique_ptr<smooth_ui_toolkit::lvgl_cpp::Button>   _btn_send_tx;   // 发布

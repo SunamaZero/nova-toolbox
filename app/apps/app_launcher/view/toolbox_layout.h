@@ -48,8 +48,13 @@ constexpr int SendBtnX = LeftX + LeftW - SendBtnW;   // 704
 
 constexpr int RowY0    = 62;
 constexpr int RowH     = 56;
+// 高行：标签一行 + 输入框一行（输入框能吃到整行宽度，长值不用挤）
+constexpr int RowHTall = 88;
 constexpr int RowPitch = 68;
 inline int rowY(int i) { return RowY0 + RowPitch * i; }
+constexpr int RowGapY = 12;                            // 行与行之间的间距
+// 依次排布：上一行的 y + 该行高度 + 间距（行高不一致时用它算下一行）
+inline int nextY(int y, int h) { return y + h + RowGapY; }
 
 constexpr int StatusY = Margin;
 constexpr int StatusH = 36;
@@ -67,6 +72,54 @@ inline int actX(int i) { return RightX + i * (ActBtnW + Gap); }
 constexpr int MsgHNoTx = 606 - Margin;            // 590
 
 // ==================== 控件构造（统一写法，避免各页各造）====================
+
+// ---------------------------------------------------------------------------
+// 让输入框里的文字垂直居中。
+//
+// LVGL 的 textarea 文字默认贴顶，只能靠 pad_top 调；而固定值必然顾此失彼：
+//   - 按单行算 → 多行内容会被挤出框外
+//   - 按双行算 → 单行内容贴在顶上（之前的 bug：文字高了 10px）
+// 所以按"内容实际高度"动态算：单行居中、多行上下均分。
+// ---------------------------------------------------------------------------
+inline void applyVerticalCenter(lv_obj_t* ta)
+{
+    if (ta == nullptr) {
+        return;
+    }
+    const lv_font_t* f      = lv_obj_get_style_text_font(ta, LV_PART_MAIN);
+    const int        line_h = f ? lv_font_get_line_height(f) : 20;
+
+    // 【坑】不要读内部 label 的高度：此刻布局可能还没算出来，拿到的是旧值，
+    // 于是 pad 算成 0、文字贴顶（和之前 lv_obj_get_height 返回默认值是同一类坑）。
+    // 直接用 lv_txt_get_size 按"文本 + 可用宽度"算换行后的真实高度，不依赖时序。
+    const char* txt     = lv_textarea_get_text(ta);
+    const int   inner_w = lv_obj_get_content_width(ta);
+    int         content = line_h;
+    if (txt != nullptr && txt[0] != 0 && inner_w > 8) {
+        lv_point_t sz = {0, 0};
+        lv_txt_get_size(&sz, txt, f, 0, 0, inner_w, LV_TEXT_FLAG_NONE);
+        if (sz.y > content) {
+            content = sz.y;
+        }
+    }
+    const int box_h = lv_obj_get_height(ta);
+    int       pad   = (box_h - content) / 2;
+    if (pad < 0) {
+        pad = 0;
+    }
+    lv_obj_set_style_pad_top(ta, pad, 0);
+    lv_obj_set_style_pad_bottom(ta, pad, 0);
+}
+
+inline void bindVerticalCenter(lv_obj_t* ta)
+{
+    lv_obj_add_event_cb(
+        ta,
+        [](lv_event_t* e) { applyVerticalCenter(static_cast<lv_obj_t*>(lv_event_get_target(e))); },
+        LV_EVENT_VALUE_CHANGED, nullptr);
+    applyVerticalCenter(ta);   // 初始也要算一次
+}
+
 
 // 只读显示区（报文/日志）：可滚动、点一下不出现光标
 inline std::unique_ptr<TextArea> makePanel(lv_obj_t* parent, int h = MsgH)
@@ -97,11 +150,9 @@ inline std::unique_ptr<TextArea> makeInput(lv_obj_t* parent, int x, int y, int w
     t->setSize(w, SendH);
     tb::styleInput(t->get());
     t->align(LV_ALIGN_TOP_LEFT, x, y);
-    t->setOneLine(false);   // 双行：长内容换行显示，不截断
+    t->setOneLine(false);   // 长内容换行显示，不截断
     t->setSize(w, SendH);
-    // styleInput 里的 pad_top 是给单行做垂直居中的，双行会挤出第二行 → 覆盖掉
-    lv_obj_set_style_pad_top(t->get(), 6, 0);
-    lv_obj_set_style_pad_bottom(t->get(), 6, 0);
+    bindVerticalCenter(t->get());   // 文字垂直居中（按内容动态算）
     t->setBorderWidth(1);
     t->setBorderColor(lv_color_hex(tb::border()));
     t->setBgColor(lv_color_hex(tb::surface()));
@@ -133,6 +184,80 @@ inline std::unique_ptr<Button> makeRow(lv_obj_t* parent, int y, const char* name
     return b;
 }
 
+// 【推荐】标签与输入框各占一行的高行。
+// 右列只有 280px：标签和输入框挤同一行时，输入框实宽只剩 184px，
+// 而 `255.255.255.255` 要 ~190px、`broker.emqx.io:1883` 更长 → 必然被切。
+// 上下两行之后输入框吃满 248px，长值单行就放得下，更长的自动换行。
+inline std::unique_ptr<TextArea> makeRowInputTall(lv_obj_t* parent, int y, const char* name, const char* init)
+{
+    lv_obj_t* box = lv_obj_create(parent);
+    lv_obj_set_size(box, RightW, RowHTall);
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, RightX, y);
+    lv_obj_set_style_bg_color(box, lv_color_hex(tb::raised()), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(box, tb::RadiusSm, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    tb::makeReadOnly(box);
+
+    // 标签占第一行
+    lv_obj_t* n = lv_label_create(box);
+    lv_label_set_text(n, name);
+    lv_obj_set_style_text_font(n, tb::fontBody(), 0);
+    lv_obj_set_style_text_color(n, lv_color_hex(tb::textDim()), 0);
+    lv_obj_align(n, LV_ALIGN_TOP_LEFT, tb::SpaceMd, tb::SpaceSm);
+
+    // 输入框占第二行，吃满宽度
+    auto t = std::make_unique<TextArea>(box);
+    t->setSize(RightW - tb::SpaceMd * 2, 48);
+    t->align(LV_ALIGN_BOTTOM_LEFT, tb::SpaceMd, -tb::SpaceSm);
+    tb::styleInput(t->get());
+    t->setOneLine(false);          // 自动换行
+    t->setSize(RightW - tb::SpaceMd * 2, 48);
+    t->setTextFont(tb::fontBody());
+    t->setTextColor(lv_color_hex(tb::text()));
+    if (init) {
+        t->setText(init);
+    }
+    bindVerticalCenter(t->get());  // 单行居中 / 多行上下均分（放在 setText 之后）
+    tool_kbd::attach(t->get());
+    return t;
+}
+
+// 【推荐】标签与值各占一行的高信息行（值很长时用，避免和标签重叠）
+inline void makeInfoRowTall(lv_obj_t* parent, int y, const char* name, const char* value, lv_obj_t** out_value = nullptr)
+{
+    lv_obj_t* box = lv_obj_create(parent);
+    lv_obj_set_size(box, RightW, RowHTall);
+    lv_obj_align(box, LV_ALIGN_TOP_LEFT, RightX, y);
+    lv_obj_set_style_bg_color(box, lv_color_hex(tb::surface()), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(box, tb::RadiusSm, 0);
+    lv_obj_set_style_border_width(box, 1, 0);
+    lv_obj_set_style_border_color(box, lv_color_hex(tb::border()), 0);
+    lv_obj_set_style_pad_all(box, 0, 0);
+    lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    tb::makeReadOnly(box);
+
+    lv_obj_t* n = lv_label_create(box);
+    lv_label_set_text(n, name);
+    lv_obj_set_style_text_font(n, tb::fontBody(), 0);
+    lv_obj_set_style_text_color(n, lv_color_hex(tb::textDim()), 0);
+    lv_obj_align(n, LV_ALIGN_TOP_LEFT, tb::SpaceMd, tb::SpaceSm);
+
+    lv_obj_t* v = lv_label_create(box);
+    lv_label_set_text(v, value ? value : "--");
+    lv_obj_set_style_text_font(v, tb::fontBody(), 0);
+    lv_obj_set_style_text_color(v, lv_color_hex(tb::text()), 0);
+    lv_obj_set_width(v, RightW - tb::SpaceMd * 2);
+    lv_label_set_long_mode(v, LV_LABEL_LONG_WRAP);   // 长值换行，不跟标签挤
+    lv_obj_align(v, LV_ALIGN_TOP_LEFT, tb::SpaceMd, tb::SpaceSm + 24);
+    if (out_value) {
+        *out_value = v;
+    }
+}
+
 // 带输入框的设置行：左名称 + 右侧可编辑输入框（值要手打时用这个，不要用 makeRow）
 inline std::unique_ptr<TextArea> makeRowInput(lv_obj_t* parent, int y, const char* name, const char* init)
 {
@@ -162,8 +287,7 @@ inline std::unique_ptr<TextArea> makeRowInput(lv_obj_t* parent, int y, const cha
     t->align(LV_ALIGN_RIGHT_MID, -tb::SpaceSm, 0);
     t->setOneLine(false);
     t->setSize(RightW - 96, 44);
-    lv_obj_set_style_pad_top(t->get(), 2, 0);
-    lv_obj_set_style_pad_bottom(t->get(), 2, 0);
+    bindVerticalCenter(t->get());
     t->setBorderWidth(1);
     t->setBorderColor(lv_color_hex(tb::border()));
     t->setBgColor(lv_color_hex(tb::surface()));
@@ -210,20 +334,23 @@ inline void makeInfoRow(lv_obj_t* parent, int y, const char* name, const char* v
 // 状态行：画出来的圆点 + 文本（圆点不依赖字体字形，绝不会变豆腐块）
 inline std::unique_ptr<Label> makeStatus(lv_obj_t* parent, lv_obj_t** out_dot)
 {
+    // 高度就取"一行字高"，然后整块垂直对齐到圆点中心线 ——
+    // 这样文字中心和圆点中心精确重合。之前用魔法 pad_top(9) 凑，
+    // 结果不同内容（带 ·、带中文数字）偏了 5px，肉眼看得出来。
+    const lv_font_t* f = tb::fontBody();
+    const int        line_h = lv_font_get_line_height(f);
     auto l = std::make_unique<Label>(parent);
-    lv_obj_set_size(l->get(), RightW - StatusDotZone, StatusH);
-    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY);
-    l->setTextFont(tb::fontBody());
+    lv_obj_set_size(l->get(), RightW - StatusDotZone, line_h);
+    // +2px 是"视觉补偿"：数字/拉丁字母的墨迹重心天然偏上（下方留的是基线以下的空间），
+    // 纯几何对齐时看着仍比圆点高一点。含中文数字和 IP 的状态行尤其明显。
+    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2 + 2);
+    l->setTextFont(f);
     l->setTextColor(lv_color_hex(tb::text()));
     lv_label_set_long_mode(l->get(), LV_LABEL_LONG_DOT);
-    // 【必须】状态文字不能有自己的底色：否则文字后面会凭空多出一块深色矩形，
-    // 和周围背景不一致（看着像块脏补丁）。串口页就是这么做的，这里漏抄过。
+    // 状态文字不能有自己的底色：否则文字后面会凭空多出一块深色矩形
     lv_obj_set_style_bg_opa(l->get(), LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_left(l->get(), 0, 0);
+    lv_obj_set_style_pad_all(l->get(), 0, 0);
     lv_obj_set_style_pad_right(l->get(), tb::SpaceSm, 0);
-    // 【必须】单行文字在 36px 高里垂直居中 —— 全靠这个 pad_top。
-    // 少了它文字会贴着顶部，跟左边圆点差半个身位（"位置偏移"就是这么来的）。
-    lv_obj_set_style_pad_top(l->get(), 9, 0);
     l->setText("--");
 
     lv_obj_t* dot = lv_obj_create(parent);

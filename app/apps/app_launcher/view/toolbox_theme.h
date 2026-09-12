@@ -139,7 +139,7 @@ inline void styleInput(lv_obj_t* o)
     lv_obj_set_style_border_color(o, lv_color_hex(border()), 0);
     lv_obj_set_style_pad_hor(o, SpaceMd - 4, 0);
     // 垂直居中：靠 pad_top 把单行文本推到框的垂直中间（不设就贴顶边）
-    // 水平：左对齐 —— 输入框内容应按阅读习惯从左起，居中会让人以为没对齐
+    // 水平：左对齐 —— 用户确认过输入框现状即可，不要改成居中
     lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_LEFT, 0);
     // 必须先把刚设的尺寸真正应用，否则 get_height 拿到的是样式默认高（偏大），
     // 算出的 pad_top 会把文字推到框外、压住下边框。

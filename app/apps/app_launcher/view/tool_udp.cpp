@@ -218,10 +218,15 @@ void UdpToolWindow::onOpen()
     // ==================== 右列 ====================
     _status_label = tl::makeStatus(_window->get(), &_status_dot);
 
-    _row_dst_ip   = tl::makeRowInput(_window->get(), tl::rowY(0), "目标地址", _dst_ip.c_str());
-    _row_dst_port = tl::makeRowInput(_window->get(), tl::rowY(1), "目标端口", "8888");
+    // 标签与输入框各占一行（输入框吃满整行宽度，长 IP 不用挤）
+    int ry = tl::rowY(0);
+    _row_dst_ip   = tl::makeRowInputTall(_window->get(), ry, "目标地址", _dst_ip.c_str());
+    ry = tl::nextY(ry, tl::RowHTall);
+    _row_dst_port = tl::makeRowInputTall(_window->get(), ry, "目标端口", "8888");
+    ry = tl::nextY(ry, tl::RowHTall);
 
-    _row_local = tl::makeRow(_window->get(), tl::rowY(2), "本机端口");
+    _row_local = tl::makeRow(_window->get(), ry, "本机端口");
+    ry = tl::nextY(ry, tl::RowH);
     _row_local->onClick().connect([&]() {
         audio::play_next_tone_progression();
         _port_idx   = (_port_idx + 1) % 4;
@@ -236,7 +241,7 @@ void UdpToolWindow::onOpen()
         }
     });
 
-    tl::makeInfoRow(_window->get(), tl::rowY(3), "收包数", "0", &_info_rx);
+    tl::makeInfoRow(_window->get(), ry, "收包数", "0", &_info_rx);
 
     _btn_run = tl::makePrimary(_window->get(), "开始监听");
     _btn_run->onClick().connect([&]() {

@@ -184,12 +184,17 @@ void MqttToolWindow::onOpen()
     const std::string uri0 = _broker_uri.empty() ? _MQTT_HOST_INIT : _broker_uri;
     const std::string sub0 = _sub_topic.empty() ? _MQTT_SUB_INIT : _sub_topic;
     const std::string pub0 = _pub_topic.empty() ? _MQTT_PUB_INIT : _pub_topic;
-    _row_broker = tl::makeRowInput(_window->get(), tl::rowY(0), "服务器", uri0.c_str());
-    _row_sub    = tl::makeRowInput(_window->get(), tl::rowY(1), "订阅", sub0.c_str());
-    _row_pub    = tl::makeRowInput(_window->get(), tl::rowY(2), "发布主题", pub0.c_str());
+    // 三个都是长值（host:port / topic），标签与输入框各占一行
+    int ry = tl::rowY(0);
+    _row_broker = tl::makeRowInputTall(_window->get(), ry, "服务器", uri0.c_str());
+    ry = tl::nextY(ry, tl::RowHTall);
+    _row_sub    = tl::makeRowInputTall(_window->get(), ry, "订阅", sub0.c_str());
+    ry = tl::nextY(ry, tl::RowHTall);
+    _row_pub    = tl::makeRowInputTall(_window->get(), ry, "发布主题", pub0.c_str());
+    ry = tl::nextY(ry, tl::RowHTall);
 
     // 设置行 3：QoS（0/1/2 循环）
-    _row_qos = tl::makeRow(_window->get(), tl::rowY(3), "QoS");
+    _row_qos = tl::makeRow(_window->get(), ry, "QoS");
     _row_qos->label().setText("1");
     _row_qos->onClick().connect([&]() {
         audio::play_next_tone_progression();
@@ -198,7 +203,7 @@ void MqttToolWindow::onOpen()
     });
 
     // 设置行 4：消息数（纯展示，不可点 —— 不做假的"看着能按"）
-    tl::makeInfoRow(_window->get(), tl::rowY(4), "消息数", "0", &_info_msg);
+    // 「消息数」不单开一行（行高变大后会和 QoS 撞），已并进状态行显示
 
     // 主操作：连接 / 断开
     _btn_run = tl::makePrimary(_window->get(), "连接");
@@ -377,11 +382,6 @@ void MqttToolWindow::refreshUi()
     snprintf(b, sizeof(b), "%d", _qos);
     _row_qos->label().setText(b);
 
-    if (_info_msg) {
-        snprintf(b, sizeof(b), "%lu", (unsigned long)_msg_count);
-        lv_label_set_text(_info_msg, b);
-    }
-
     if (_client == nullptr) {
         _status_label->setText("未连接");
         _status_label->setTextColor(lv_color_hex(tb::textDim()));
@@ -400,7 +400,8 @@ void MqttToolWindow::refreshUi()
     _btn_run->label().setTextColor(lv_color_hex(tb::text()));
 
     if (_connected) {
-        snprintf(b, sizeof(b), "已连接 %s", host_of(_broker_uri).c_str());
+        // 状态行不再重复服务器地址（右列"服务器"行已有），改为显示已收消息条数
+        snprintf(b, sizeof(b), "已连接 · %lu 条", (unsigned long)_msg_count);
         _status_label->setText(b);
         _status_label->setTextColor(lv_color_hex(tb::success()));
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::success()), 0);

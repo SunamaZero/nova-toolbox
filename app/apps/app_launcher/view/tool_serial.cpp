@@ -142,8 +142,14 @@ void SerialToolWindow::onOpen()
     // ==================== 右列 ====================
     // 状态胶囊：圆角底 + 状态图标 + 参数摘要（14px 等宽，长文本也放得下）
     _status_label = std::make_unique<Label>(_window->get());
-    lv_obj_set_size(_status_label->get(), RightW - StatusDotZone, StatusH);
-    _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY);
+    // 高度取一行字高，整块对齐到圆点中心线 —— 与其它工具页同一套做法（不用魔法 pad_top）
+    {
+        const lv_font_t* sf     = tb::fontBody();
+        const int        line_h = lv_font_get_line_height(sf);
+        lv_obj_set_size(_status_label->get(), RightW - StatusDotZone, line_h);
+        // +2px 视觉补偿：数字/字母墨迹重心偏上，纯几何对齐看着仍偏高（与其它页统一）
+        _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2 + 2);
+    }
 
     // 状态灯：画出来的圆点（14x14，圆角=圆），不用任何字体字形 —— 免得字体缺字变豆腐块
     _status_dot = lv_obj_create(_window->get());
@@ -158,7 +164,7 @@ void SerialToolWindow::onOpen()
     lv_obj_set_style_bg_opa(_status_label->get(), LV_OPA_TRANSP, 0);   // 不要胶囊底：状态灯 + 文字就够
     lv_obj_set_style_pad_left(_status_label->get(), 0, 0);
     lv_obj_set_style_pad_right(_status_label->get(), tb::SpaceSm, 0);
-    lv_obj_set_style_pad_top(_status_label->get(), 9, 0);      // 单行在 36 高胶囊里垂直居中
+    lv_obj_set_style_pad_all(_status_label->get(), 0, 0);
     // 必须用带中文的 tb_cn_16（fontLabel 是 IBM Plex Mono，只含 ASCII —— 中文会变豆腐块）
     _status_label->setTextFont(tb::fontBody());
     lv_label_set_long_mode(_status_label->get(), LV_LABEL_LONG_DOT);
