@@ -5,6 +5,7 @@
  */
 #include "hal/hal_esp32.h"
 #include "apps/app_launcher/view/tool_logsys.h"   // 日志系统（联网可查）
+#include "apps/app_launcher/view/toolbox_theme.h"  // tb::bg() 等设计 token（屏幕底色要用）
 
 // LVGL 官方自带中文字体（LV_FONT_SIMSUN_16_CJK=y）
 extern "C" {
@@ -109,6 +110,13 @@ void HalEsp32::init()
                              }};
     lvDisp = bsp_display_start_with_config(&cfg);
     lv_display_set_rotation(lvDisp, LV_DISPLAY_ROTATION_90);
+
+    // 【必须显式设屏幕底色】LVGL 默认主题给 screen 的是**白色**底。
+    // 我们的应用窗口是圆角的 -> 四角会露出白底（用户描述为"取景框似的白色直角线条"）；
+    // 界面重绘时被刷新的区域也会先露白底再画内容 -> 表现为"一闪一闪"。
+    // 模拟器看不到是因为它走 lv_conf.h、默认主题不同 —— 又一次"真机 LVGL 默认值 ≠ 模拟器"。
+    lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(tb::bg()), 0);
+    lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
 
     // 屏幕级中文字体：LVGL 的"全局默认字体"走的是 CONFIG_LV_FONT_DEFAULT（choice 名，
     // ESP-IDF 不生成该宏 → 实际回退到 montserrat 拉丁字体 → 中文变方框）。

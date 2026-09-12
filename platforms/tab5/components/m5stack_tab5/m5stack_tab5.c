@@ -1380,6 +1380,9 @@ esp_err_t bsp_display_new_with_handles_to_st7123(const bsp_display_config_t* con
         .dpi_clk_src        = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
         .dpi_clock_freq_mhz = 70,  // DPI clock frequency
         .pixel_format       = LCD_COLOR_PIXEL_FORMAT_RGB565,
+        // 注：曾把这里改成 2（DPI 双缓冲防撕裂），但"闪烁"的真因是 LVGL 屏幕
+        // 默认白底在重绘时露出（见 hal_esp32.cpp 里给 screen 设底色那处），
+        // 与帧缓冲数无关，故还原为 1，省 1.84MB PSRAM。
         .num_fbs            = 1,
         .video_timing =
             {
