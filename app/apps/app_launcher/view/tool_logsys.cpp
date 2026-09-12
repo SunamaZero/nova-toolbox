@@ -64,8 +64,18 @@ bool s_inited = false;
 void time_sync_task(void*)
 {
     // 时区不在这里设 —— 见 init()。这里只负责 SNTP 校时。
-    // （曾经把 setenv("TZ") 放这里，结果日志钩子在它之前就挂上了，
-    //   开机的整段日志都是 UTC 时间戳，用户实测发现"时间不对"。）
+    //
+    // 【必须先等网络就绪】esp_sntp_init() 内部会调 lwIP 的 tcpip_callback；
+    // 网络栈没起来就调 -> assert failed: tcpip_callback (Invalid mbox) -> 开机崩溃重启。
+    // 这个坑潜伏很久：以前开机时 RTC 里存着上次校时的时间，下面那个
+    // "已校时就直接退出" 的判断在第一次循环就为真，SNTP 根本没被调用，所以从没崩过。
+    // 一旦彻底断电（拔电池）-> RTC 清零 -> 判断为假 -> 真的去初始化 SNTP -> 必崩。
+    // 现在先阻塞等 WiFi 连上，与 report_ip_task 同一套做法。
+    while (!GetHAL()->wifiIsStaConnected()) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
     bool started = false;
     int  tries   = 0;
     for (;;) {
