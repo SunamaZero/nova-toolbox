@@ -341,7 +341,9 @@ inline std::unique_ptr<Label> makeStatus(lv_obj_t* parent, lv_obj_t** out_dot)
     const int        line_h = lv_font_get_line_height(f);
     auto l = std::make_unique<Label>(parent);
     lv_obj_set_size(l->get(), RightW - StatusDotZone, line_h);
-    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2);
+    // +1px：用户实测六页状态文字都比圆心高约 1px（去掉早先那个 2px 补偿后剩下的偏差），
+    // 这里统一往下挪 1px。六页共用本函数，所以只改这一处。
+    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2 + 1);
     l->setTextFont(f);
     l->setTextColor(lv_color_hex(tb::text()));
     lv_label_set_long_mode(l->get(), LV_LABEL_LONG_DOT);

@@ -12,6 +12,7 @@
  */
 #include "toolbox_windows.h"
 #include "toolbox_theme.h"
+#include "toolbox_layout.h"   // tl::makeStatus 等：布局/配色唯一来源
 #include "tool_kbd.h"
 #include <lvgl.h>
 #include <hal/hal.h>
@@ -140,32 +141,12 @@ void SerialToolWindow::onOpen()
     });
 
     // ==================== 右列 ====================
-    // 状态胶囊：圆角底 + 状态图标 + 参数摘要（14px 等宽，长文本也放得下）
-    _status_label = std::make_unique<Label>(_window->get());
-    // 高度取一行字高，整块对齐到圆点中心线 —— 与其它工具页同一套做法（不用魔法 pad_top）
-    {
-        const lv_font_t* sf     = tb::fontBody();
-        const int        line_h = lv_font_get_line_height(sf);
-        lv_obj_set_size(_status_label->get(), RightW - StatusDotZone, line_h);
-        _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2);
-    }
-
-    // 状态灯：画出来的圆点（14x14，圆角=圆），不用任何字体字形 —— 免得字体缺字变豆腐块
-    _status_dot = lv_obj_create(_window->get());
-    lv_obj_set_size(_status_dot, StatusDot, StatusDot);
-    lv_obj_align(_status_dot, LV_ALIGN_TOP_LEFT, RightX + tb::SpaceMd, StatusY + (StatusH - StatusDot) / 2);
-    lv_obj_set_style_radius(_status_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(_status_dot, 0, 0);
-    lv_obj_set_style_bg_opa(_status_dot, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
-    lv_obj_clear_flag(_status_dot, LV_OBJ_FLAG_SCROLLABLE);
-    tb::makeReadOnly(_status_dot);
-    lv_obj_set_style_bg_opa(_status_label->get(), LV_OPA_TRANSP, 0);   // 不要胶囊底：状态灯 + 文字就够
-    lv_obj_set_style_pad_left(_status_label->get(), 0, 0);
-    lv_obj_set_style_pad_right(_status_label->get(), tb::SpaceSm, 0);
-    lv_obj_set_style_pad_all(_status_label->get(), 0, 0);
-    // 必须用带中文的 tb_cn_16（fontLabel 是 IBM Plex Mono，只含 ASCII —— 中文会变豆腐块）
-    _status_label->setTextFont(tb::fontBody());
+    // 状态行：一律用统一的 tl::makeStatus（字体 / 对齐 / 正文色 / 圆点 全给你）
+    // 【为什么必须统一】这页原来是手写的，颜色只靠 refresh 里几行 setTextColor 撑着；
+    // 上一版把六页状态文字统一成正文色、注释掉那些 setTextColor 之后，
+    // 这一页就一点颜色都没有了 —— 直接掉回 LVGL 默认灰。
+    // 布局/配色代码各页复制 = 迟早漏掉某一页（日志页已栽过一次，这是第二次）。
+    _status_label = tl::makeStatus(_window->get(), &_status_dot);
     lv_label_set_long_mode(_status_label->get(), LV_LABEL_LONG_DOT);
     _status_label->setText("已关闭");
 
