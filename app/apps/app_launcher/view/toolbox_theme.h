@@ -22,6 +22,9 @@ extern const lv_font_t ibm_plex_mono_20;
 extern const lv_font_t ibm_plex_mono_32;
 // 完整中文字库（GB2312 一级 3755 字 + 标点，由官方 SimSun.woff 经 lv_font_conv 生成）
 extern const lv_font_t tb_cn_16;
+// 卡片图标专用：FontAwesome 5，32px，只含 7 个工具图标（fa_solid_32.c）
+// 与导航栏用的 tb_cn_16 内嵌 FA 字形同源，只是尺寸按卡片场景放大
+extern const lv_font_t fa_solid_32;
 }
 
 namespace tb {
@@ -104,6 +107,8 @@ inline const lv_font_t* fontTitle() { return &tb_cn_16; }  // 标题（中文，
 inline const lv_font_t* fontBig()   { return &tb_cn_16; }
 // 导航标签：14px 等宽拉丁（窄，保证 SETTINGS 这类长标签不截断）
 inline const lv_font_t* fontLabel() { return &ibm_plex_mono_14; }
+// 卡片图标（ToolboxHome 首页模块卡）
+inline const lv_font_t* fontIconBig() { return &fa_solid_32; }
 
 // ==================== 通用样式助手 ====================
 // 卡片：surface 底 + border 描边 + RadiusMd

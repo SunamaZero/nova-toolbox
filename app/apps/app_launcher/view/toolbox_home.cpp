@@ -107,6 +107,19 @@ ToolboxHome::ToolboxHome()
 
 // ---- 导航栏按钮：图标在上、标签在下 ----
 // 图标来自并入字体的 FontAwesome 码点；标签用 14px 等宽，保证 "SETTINGS" 8 字符不截断
+// FontAwesome 码点 -> UTF-8（导航栏图标与首页卡片图标共用一处，别各写一份）
+static void icon_to_utf8(uint32_t cp, char* buf)
+{
+    if (cp < 0x800) {
+        buf[0] = 0xC0 | (cp >> 6);
+        buf[1] = 0x80 | (cp & 0x3F);
+    } else {
+        buf[0] = 0xE0 | (cp >> 12);
+        buf[1] = 0x80 | ((cp >> 6) & 0x3F);
+        buf[2] = 0x80 | (cp & 0x3F);
+    }
+}
+
 static lv_obj_t* make_nav_btn(lv_obj_t* parent, uint32_t icon_cp, const char* text, int page)
 {
     lv_obj_t* btn = lv_obj_create(parent);
@@ -128,9 +141,7 @@ static lv_obj_t* make_nav_btn(lv_obj_t* parent, uint32_t icon_cp, const char* te
     // 图标
     lv_obj_t* ic = lv_label_create(btn);
     char icbuf[8] = {0};
-    // UTF-8 编码 FontAwesome 码点
-    if (icon_cp < 0x800) { icbuf[0] = 0xC0 | (icon_cp >> 6); icbuf[1] = 0x80 | (icon_cp & 0x3F); }
-    else { icbuf[0] = 0xE0 | (icon_cp >> 12); icbuf[1] = 0x80 | ((icon_cp >> 6) & 0x3F); icbuf[2] = 0x80 | (icon_cp & 0x3F); }
+    icon_to_utf8(icon_cp, icbuf);
     lv_label_set_text(ic, icbuf);
     lv_obj_set_style_text_font(ic, tb::fontBody(), 0);
     lv_obj_set_style_text_color(ic, lv_color_hex(tb::textDim()), 0);
@@ -197,6 +208,17 @@ static void build_home_cards(lv_obj_t* content)
         lv_obj_set_style_bg_color(accent, lv_color_hex(_tools[i].accent), 0);
         lv_obj_set_style_bg_opa(accent, LV_OPA_COVER, 0);
         lv_obj_clear_flag(accent, LV_OBJ_FLAG_CLICKABLE);
+
+        // 图标：卡片右上角，用工具自己的强调色 —— 与左上那条强调色横条一起构成"卡头"，
+        // 一左一右、一小一大，卡片因此有了标识而不只是两行字。
+        lv_obj_t* icon = lv_label_create(card);
+        char icbuf[8] = {0};
+        icon_to_utf8(_tools[i].icon, icbuf);
+        lv_label_set_text(icon, icbuf);
+        lv_obj_set_style_text_font(icon, tb::fontIconBig(), 0);
+        lv_obj_set_style_text_color(icon, lv_color_hex(_tools[i].accent), 0);
+        lv_obj_align(icon, LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
 
         lv_obj_t* name = lv_label_create(card);
         lv_label_set_text(name, _tools[i].name);
