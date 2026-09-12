@@ -429,16 +429,16 @@ void TcpToolWindow::refreshUi()
     }
     if (_listening && _client_connected) {
         _status_label->setText("客户端已连接");
-        _status_label->setTextColor(lv_color_hex(tb::success()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::success()), 0);
     } else if (_listening) {
         snprintf(b, sizeof(b), "监听中 :%u", (unsigned)(_bound_port ? _bound_port : _tcp_port));
         _status_label->setText(b);
-        _status_label->setTextColor(lv_color_hex(tb::text()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::warning()), 0);
     } else {
         _status_label->setText("已停止");
-        _status_label->setTextColor(lv_color_hex(tb::textDim()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
     }
 }

@@ -147,8 +147,7 @@ void SerialToolWindow::onOpen()
         const lv_font_t* sf     = tb::fontBody();
         const int        line_h = lv_font_get_line_height(sf);
         lv_obj_set_size(_status_label->get(), RightW - StatusDotZone, line_h);
-        // +2px 视觉补偿：数字/字母墨迹重心偏上，纯几何对齐看着仍偏高（与其它页统一）
-        _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2 + 2);
+        _status_label->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2);
     }
 
     // 状态灯：画出来的圆点（14x14，圆角=圆），不用任何字体字形 —— 免得字体缺字变豆腐块
@@ -568,7 +567,7 @@ void SerialToolWindow::refreshRows()
         _btn_open->setBgColor(lv_color_hex(tb::raised()));
         _btn_open->label().setTextColor(lv_color_hex(tb::accent()));
         _status_label->setText("正在查找 USB 设备…");
-        _status_label->setTextColor(lv_color_hex(tb::warning()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::warning()), 0);
     } else if (_opened) {
         _btn_open->label().setText("关闭串口");
@@ -587,7 +586,7 @@ void SerialToolWindow::refreshRows()
                      _datas[_data_idx], _par_names[_par_idx], _stops[_stop_idx]);
         }
         _status_label->setText(b);
-        _status_label->setTextColor(lv_color_hex(tb::success()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::success()), 0);
     } else {
         _btn_open->label().setText("打开串口");
@@ -595,7 +594,7 @@ void SerialToolWindow::refreshRows()
         _btn_open->label().setTextColor(lv_color_hex(tb::accent()));
 
         _status_label->setText("已关闭");
-        _status_label->setTextColor(lv_color_hex(tb::textDim()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
     }
 }

@@ -59,15 +59,32 @@ constexpr int MaxLines = 120;   // 面板最多留多少行 label（滚上去也
 
 const char* _filter_names[4] = {"全部", "信息", "警告", "错误"};
 
-// 日志行的等级色（IDF 日志首字符就是等级：E/W/I/D/V）
+// 日志行的等级色。
+// 【坑】不能取 s[0]：本页每行前面加了 "[HH:MM:SS] " 时间戳，首字符永远是 '['，
+// 那样所有行都会落到 default 变成 textMute(灰)——整个日志区看着就是一片灰。
+// 正确做法：在整行里找 IDF 的 "<空格><等级><空格>(" 模式（I (2211) TAG: ...）。
+char level_of(const std::string& s)
+{
+    for (size_t i = 1; i + 2 < s.size(); ++i) {
+        if (s[i - 1] == ' ' && s[i + 1] == ' ' && s[i + 2] == '(') {
+            switch (s[i]) {
+            case 'E': case 'W': case 'I': case 'D': case 'V':
+                return s[i];
+            default:
+                break;
+            }
+        }
+    }
+    return 0;   // 认不出
+}
+
 uint32_t level_color(const std::string& s)
 {
-    if (s.empty()) return tb::textMute();
-    switch (s[0]) {
+    switch (level_of(s)) {
     case 'E': return tb::danger();
     case 'W': return tb::warning();
     case 'I': return tb::text();
-    default:  return tb::textMute();   // D/V 等调试级
+    default:  return tb::text();   // D/V 与认不出的都用正文色兜底，绝不让整屏变灰
     }
 }
 
@@ -262,10 +279,11 @@ bool LogToolWindow::line_match(const std::string& s) const
     if (_filter == 0 || s.empty()) {
         return true;
     }
+    // 同 level_of 的理由：不能在 s[0] 上判断等级（行首是时间戳的 '['）
     switch (_filter) {
-    case 1: return s[0] == 'I';
-    case 2: return s[0] == 'W';
-    case 3: return s[0] == 'E';
+    case 1: return level_of(s) == 'I';
+    case 2: return level_of(s) == 'W';
+    case 3: return level_of(s) == 'E';
     default: return true;
     }
 }

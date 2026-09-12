@@ -341,9 +341,7 @@ inline std::unique_ptr<Label> makeStatus(lv_obj_t* parent, lv_obj_t** out_dot)
     const int        line_h = lv_font_get_line_height(f);
     auto l = std::make_unique<Label>(parent);
     lv_obj_set_size(l->get(), RightW - StatusDotZone, line_h);
-    // +2px 是"视觉补偿"：数字/拉丁字母的墨迹重心天然偏上（下方留的是基线以下的空间），
-    // 纯几何对齐时看着仍比圆点高一点。含中文数字和 IP 的状态行尤其明显。
-    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2 + 2);
+    l->align(LV_ALIGN_TOP_LEFT, RightX + StatusDotZone, StatusY + (StatusH - line_h) / 2);
     l->setTextFont(f);
     l->setTextColor(lv_color_hex(tb::text()));
     lv_label_set_long_mode(l->get(), LV_LABEL_LONG_DOT);

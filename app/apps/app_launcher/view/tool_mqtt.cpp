@@ -384,7 +384,7 @@ void MqttToolWindow::refreshUi()
 
     if (_client == nullptr) {
         _status_label->setText("未连接");
-        _status_label->setTextColor(lv_color_hex(tb::textDim()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::textDim()), 0);
 
         _btn_run->label().setText("连接");
@@ -403,11 +403,11 @@ void MqttToolWindow::refreshUi()
         // 状态行不再重复服务器地址（右列"服务器"行已有），改为显示已收消息条数
         snprintf(b, sizeof(b), "已连接 · %lu 条", (unsigned long)_msg_count);
         _status_label->setText(b);
-        _status_label->setTextColor(lv_color_hex(tb::success()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::success()), 0);
     } else {
         _status_label->setText("连接中…");
-        _status_label->setTextColor(lv_color_hex(tb::warning()));
+        // 状态文字统一用正文米色（与 UDP 页一致）——状态由圆点颜色表达，文字不跟着变色
         if (_status_dot) lv_obj_set_style_bg_color(_status_dot, lv_color_hex(tb::warning()), 0);
     }
 }
