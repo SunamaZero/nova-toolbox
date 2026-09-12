@@ -111,10 +111,12 @@ void HalEsp32::init()
     lvDisp = bsp_display_start_with_config(&cfg);
     lv_display_set_rotation(lvDisp, LV_DISPLAY_ROTATION_90);
 
-    // 【必须显式设屏幕底色】LVGL 默认主题给 screen 的是**白色**底。
-    // 我们的应用窗口是圆角的 -> 四角会露出白底（用户描述为"取景框似的白色直角线条"）；
-    // 界面重绘时被刷新的区域也会先露白底再画内容 -> 表现为"一闪一闪"。
-    // 模拟器看不到是因为它走 lv_conf.h、默认主题不同 —— 又一次"真机 LVGL 默认值 ≠ 模拟器"。
+    // 【屏幕底色】LVGL 默认主题给 screen 的是白色底；本工程的开机动画
+    // (app_startup_anim) 还会把它显式设成 0xFFFFFF，且退出时不还原。
+    // 我们的窗口是圆角、边缘有留白 -> 四周/四角露出白底。
+    // 用户实报原话：四个角上有白色直角线条，看着像取景框。
+    // 模拟器看不到，因为它走 lv_conf.h、默认主题不同。
+    // 注：真正生效的处置在 AppToolbox::onOpen() —— 开机动画跑在本函数之后，会覆盖这里。
     lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(tb::bg()), 0);
     lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
 
