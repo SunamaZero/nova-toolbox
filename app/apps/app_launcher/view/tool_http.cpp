@@ -136,7 +136,7 @@ void HttpToolWindow::pushRequest(const std::string& info)
 {
     {
         std::lock_guard<std::mutex> lock(_rx_mutex);
-        _rx_packets.push(info);
+        _rx_packets.push(tl::stamp(info));
         if (_rx_packets.size() > 50) {
             _rx_packets.pop();
         }

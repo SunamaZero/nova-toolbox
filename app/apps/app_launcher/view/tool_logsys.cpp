@@ -324,3 +324,32 @@ void clear()
 }  // namespace logsys
 
 #endif  // CONFIG_IDF_TARGET_ESP32P4
+
+// ---------------------------------------------------------------------------
+// 工具页时间戳（与上面日志钩子同一套格式，复用同一判断）
+// ---------------------------------------------------------------------------
+namespace logsys {
+
+std::string stamp_line(const std::string& text)
+{
+    char stamp[16];
+    const time_t now = time(nullptr);
+    if (now > 1700000000) {
+        struct tm tmv;
+        localtime_r(&now, &tmv);
+        strftime(stamp, sizeof(stamp), "%H:%M:%S", &tmv);
+    } else {
+        const int64_t us = esp_timer_get_time();
+        snprintf(stamp, sizeof(stamp), "+%u.%01u",
+                 (unsigned)(us / 1000000), (unsigned)((us / 100000) % 10));
+    }
+    std::string out;
+    out.reserve(text.size() + 20);
+    out += '[';
+    out += stamp;
+    out += "] ";
+    out += text;
+    return out;
+}
+
+}  // namespace logsys

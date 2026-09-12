@@ -33,4 +33,9 @@ int count();
 // 清空缓冲
 void clear();
 
+// 给一行文本加时间戳前缀（工具页用）—— 格式与日志页**完全相同**：
+//   已校时 -> [HH:MM:SS] ；未校时 -> [+开机秒.十分位]
+// 工具页一律走这里，不要各自拼时间字符串。
+std::string stamp_line(const std::string& text);
+
 }  // namespace logsys

@@ -110,7 +110,7 @@ void UdpToolWindow::udpRxTask(void* arg)
             packet.append(buf, len);
             {
                 std::lock_guard<std::mutex> lock(self->_rx_mutex);
-                self->_rx_packets.push(std::move(packet));
+                self->_rx_packets.push(tl::stamp(packet));
                 if (self->_rx_packets.size() > 50) {
                     self->_rx_packets.pop();
                 }
@@ -145,14 +145,14 @@ void UdpToolWindow::setListening(bool on)
         _task_running = true;
         if (xTaskCreate(udpRxTask, "udp_rx", 4096, this, 5, (TaskHandle_t*)&_task_handle) != pdPASS) {
             _task_running = false;
-            _rx_panel->addText("[启动失败：任务创建失败]\n");
+            _rx_panel->addText((tl::stamp("[启动失败：任务创建失败]") + "\n").c_str());
         } else {
-            _rx_panel->addText("[开始监听]\n");
+            _rx_panel->addText((tl::stamp("[开始监听]") + "\n").c_str());
         }
     } else {
         _task_running = false;
         vTaskDelay(pdMS_TO_TICKS(300));   // 等收包任务的 recvfrom 超时退出
-        _rx_panel->addText("[停止监听]\n");
+        _rx_panel->addText((tl::stamp("[停止监听]") + "\n").c_str());
     }
     refreshUi();
 }
@@ -309,9 +309,7 @@ void UdpToolWindow::sendText(const char* text)
 {
     if (_sock < 0 || !_listening) {
         // 没监听就发不出去 —— 如实说，不假装发出去了
-        _rx_panel->addText("[未开始监听] ");
-        _rx_panel->addText(text);
-        _rx_panel->addText("\n");
+        _rx_panel->addText((tl::stamp("[未开始监听] ") + text + "\n").c_str());
         return;
     }
 
@@ -326,13 +324,13 @@ void UdpToolWindow::sendText(const char* text)
     int len = sendto(_sock, text, strlen(text), 0, (struct sockaddr*)&dst, sizeof(dst));
     if (len < 0) {
         mclog::tagWarn(_tag, "sendto failed errno={}", errno);
-        _rx_panel->addText("[发送失败]\n");
+        _rx_panel->addText((tl::stamp("[发送失败]") + "\n").c_str());
         return;
     }
 
     char echo[192];
     snprintf(echo, sizeof(echo), "[TX → %s:%u] %s\n", _dst_ip.c_str(), (unsigned)_dst_port, text);
-    _rx_panel->addText(echo);
+    _rx_panel->addText(tl::stamp(echo).c_str());
 }
 
 #endif  // CONFIG_IDF_TARGET_ESP32P4

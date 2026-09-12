@@ -355,9 +355,20 @@ void SerialToolWindow::render()
     int hex_col = 0;
     char b[8];
 
+    // 行首打时间戳：串口是字节流，不能每个字节都打戳（会糊成一片），
+    // 规则是「新起一行才打一个」—— 与日志页同格式（[HH:MM:SS]，未校时 [+开机秒.十分位]）。
+    // 注意 \r 也算行首（有些设备只用 CR 换行）。
+    auto stamp_if_line_start = [](std::string& o) {
+        if (o.empty() || o.back() == '\n' || o.back() == '\r') {
+            o += tl::stamp("");
+        }
+    };
+
     for (const auto& it : _items) {
         if (it.tx) {
-            out += "\n[TX] ";
+            out += "\n";
+            stamp_if_line_start(out);
+            out += "[TX] ";
             out += it.text;
             out += "\n";
             hex_col = 0;
@@ -365,6 +376,7 @@ void SerialToolWindow::render()
         }
         if (_hex_mode) {
             for (uint8_t c : it.bytes) {
+                stamp_if_line_start(out);
                 snprintf(b, sizeof(b), "%02X ", c);
                 out += b;
                 if (++hex_col >= 16) {
@@ -376,10 +388,9 @@ void SerialToolWindow::render()
             for (uint8_t c : it.bytes) {
                 if (c == '\r' || c == '\n') {
                     out += (char)c;
-                } else if (c >= 0x20 && c < 0x7F) {
-                    out += (char)c;
                 } else {
-                    out += '.';
+                    stamp_if_line_start(out);
+                    out += (c >= 0x20 && c < 0x7F) ? (char)c : '.';
                 }
             }
         }

@@ -15,6 +15,7 @@
 
 #include "toolbox_theme.h"
 #include "tool_kbd.h"
+#include "tool_logsys.h"   // 时间戳（工具页逐行打戳，格式与日志页一致）
 #include <lvgl.h>
 #include <smooth_ui_toolkit.h>
 #include <smooth_lvgl.h>
@@ -27,6 +28,10 @@ using smooth_ui_toolkit::lvgl_cpp::Button;
 using smooth_ui_toolkit::lvgl_cpp::Container;
 using smooth_ui_toolkit::lvgl_cpp::Label;
 using smooth_ui_toolkit::lvgl_cpp::TextArea;
+
+// 给一行报文加时间戳前缀 —— 与日志页同一套格式（已校时 [HH:MM:SS]，未校时 [+开机秒.十分位]）。
+// 工具页一律用它，不要在别处自己拼时间字符串。
+inline std::string stamp(const std::string& text) { return logsys::stamp_line(text); }
 
 // ==================== 几何常量（唯一来源）====================
 constexpr int W       = 1164;                     // 工具窗口宽（= 父内容区宽，绝不能更宽）

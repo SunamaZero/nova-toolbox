@@ -88,8 +88,9 @@ void MqttToolWindow::pushEvent(const std::string& info)
     if (info.compare(0, 5, "\n[sub ") == 0) {
         _msg_count++;
     }
+    // 时间戳务必加在 _msg_count 判断之后：前缀会顶掉行首，compare(0,5) 就废了
     std::lock_guard<std::mutex> lock(_rx_mutex);
-    _rx_packets.push(info);
+    _rx_packets.push(tl::stamp(info));
     if (_rx_packets.size() > 50) {
         _rx_packets.pop();
     }

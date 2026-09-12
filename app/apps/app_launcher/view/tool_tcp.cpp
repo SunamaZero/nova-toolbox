@@ -65,7 +65,7 @@ static void panelLine(TextArea* panel, const char* text)
     if (cur != nullptr && cur[0] != '\0') {
         panel->addText("\n");
     }
-    panel->addText(text);
+    panel->addText(tl::stamp(text).c_str());
     lv_obj_scroll_to_y(panel->get(), LV_COORD_MAX, LV_ANIM_OFF);
 }
 
@@ -138,7 +138,7 @@ void TcpToolWindow::tcpSrvTask(void* arg)
                 {
                     // 让界面知道有人连上了（状态行之外再留一行痕迹）
                     std::lock_guard<std::mutex> lock(self->_rx_mutex);
-                    self->_rx_packets.push("[客户端已连接]");
+                    self->_rx_packets.push(tl::stamp("[客户端已连接]"));
                 }
             }
             continue;
@@ -153,7 +153,7 @@ void TcpToolWindow::tcpSrvTask(void* arg)
             packet.append(buf, len);
             {
                 std::lock_guard<std::mutex> lock(self->_rx_mutex);
-                self->_rx_packets.push(std::move(packet));
+                self->_rx_packets.push(tl::stamp(packet));
                 if (self->_rx_packets.size() > 50) {
                     self->_rx_packets.pop();
                 }
@@ -167,7 +167,7 @@ void TcpToolWindow::tcpSrvTask(void* arg)
             self->_client_connected = false;
             {
                 std::lock_guard<std::mutex> lock(self->_rx_mutex);
-                self->_rx_packets.push("[客户端已断开]");
+                self->_rx_packets.push(tl::stamp("[客户端已断开]"));
             }
         }
     }
