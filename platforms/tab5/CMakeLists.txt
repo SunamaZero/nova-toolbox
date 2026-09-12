@@ -11,6 +11,6 @@ set(EXTRA_COMPONENT_DIRS
 
 # OTA 版本号：改这里 = 发布新固件（设备端比对 remote/current 决定是否升级）
 # 必须放在 project() 之前
-set(PROJECT_VER "1.0.20")
+set(PROJECT_VER "1.0.22")
 
 project(m5stack_tab5)

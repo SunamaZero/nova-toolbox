@@ -19,6 +19,7 @@
 #include <smooth_ui_toolkit.h>
 #include <smooth_lvgl.h>
 #include <memory>
+#include <string>
 
 namespace tl {
 
@@ -96,8 +97,11 @@ inline std::unique_ptr<TextArea> makeInput(lv_obj_t* parent, int x, int y, int w
     t->setSize(w, SendH);
     tb::styleInput(t->get());
     t->align(LV_ALIGN_TOP_LEFT, x, y);
-    t->setOneLine(true);
-    t->setSize(w, SendH);   // 【必须】setOneLine 会把高度改成内容自适应，之后要重新固定
+    t->setOneLine(false);   // 双行：长内容换行显示，不截断
+    t->setSize(w, SendH);
+    // styleInput 里的 pad_top 是给单行做垂直居中的，双行会挤出第二行 → 覆盖掉
+    lv_obj_set_style_pad_top(t->get(), 6, 0);
+    lv_obj_set_style_pad_bottom(t->get(), 6, 0);
     t->setBorderWidth(1);
     t->setBorderColor(lv_color_hex(tb::border()));
     t->setBgColor(lv_color_hex(tb::surface()));
@@ -151,11 +155,15 @@ inline std::unique_ptr<TextArea> makeRowInput(lv_obj_t* parent, int y, const cha
     lv_obj_align(n, LV_ALIGN_LEFT_MID, tb::SpaceMd, 0);
 
     auto t = std::make_unique<TextArea>(box);
-    t->setSize(RightW - 96, 40);
+    // 双行显示：右列只有 184px，`255.255.255.255` 这种值单行放不下（需要 ~190px），
+    // 单行会被截断，两行就能完整看到。
+    t->setSize(RightW - 96, 44);
     tb::styleInput(t->get());
     t->align(LV_ALIGN_RIGHT_MID, -tb::SpaceSm, 0);
-    t->setOneLine(true);
-    t->setSize(RightW - 96, 40);
+    t->setOneLine(false);
+    t->setSize(RightW - 96, 44);
+    lv_obj_set_style_pad_top(t->get(), 2, 0);
+    lv_obj_set_style_pad_bottom(t->get(), 2, 0);
     t->setBorderWidth(1);
     t->setBorderColor(lv_color_hex(tb::border()));
     t->setBgColor(lv_color_hex(tb::surface()));
@@ -208,6 +216,14 @@ inline std::unique_ptr<Label> makeStatus(lv_obj_t* parent, lv_obj_t** out_dot)
     l->setTextFont(tb::fontBody());
     l->setTextColor(lv_color_hex(tb::text()));
     lv_label_set_long_mode(l->get(), LV_LABEL_LONG_DOT);
+    // 【必须】状态文字不能有自己的底色：否则文字后面会凭空多出一块深色矩形，
+    // 和周围背景不一致（看着像块脏补丁）。串口页就是这么做的，这里漏抄过。
+    lv_obj_set_style_bg_opa(l->get(), LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_left(l->get(), 0, 0);
+    lv_obj_set_style_pad_right(l->get(), tb::SpaceSm, 0);
+    // 【必须】单行文字在 36px 高里垂直居中 —— 全靠这个 pad_top。
+    // 少了它文字会贴着顶部，跟左边圆点差半个身位（"位置偏移"就是这么来的）。
+    lv_obj_set_style_pad_top(l->get(), 9, 0);
     l->setText("--");
 
     lv_obj_t* dot = lv_obj_create(parent);
@@ -256,6 +272,27 @@ inline std::unique_ptr<Button> makeAction(lv_obj_t* parent, int idx, const char*
 }
 
 // 发送行：左输入框 + 右发送按钮（复用串口页的比例：输入框 = 左列宽 - 按钮宽 - 间距）
+// 从输入框取值，顺带去掉首尾空白与换行。
+// 输入框改成双行后，用户可能误按回车 → 值里混进 '\n'，直接拿去连服务器会失败。
+inline std::string textOf(TextArea* t)
+{
+    if (!t) {
+        return std::string();
+    }
+    const char* raw = lv_textarea_get_text(t->get());
+    std::string v   = raw ? raw : "";
+    std::string out;
+    out.reserve(v.size());
+    for (char c : v) {
+        if (c != '\n' && c != '\r') {
+            out += c;
+        }
+    }
+    const size_t b = out.find_first_not_of(" \t");
+    const size_t e = out.find_last_not_of(" \t");
+    return (b == std::string::npos) ? std::string() : out.substr(b, e - b + 1);
+}
+
 struct SendRow {
     std::unique_ptr<TextArea> input;
     std::unique_ptr<Button>   button;

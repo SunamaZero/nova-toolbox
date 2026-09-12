@@ -119,10 +119,17 @@ static void kb_poll_task(void*)
             kb_write_reg(REG_INT_STA, 0x00);  // 清中断状态
             idle_ticks = 0;
         } else {
-            if (++idle_ticks % 200 == 0) {   // 约每 10 秒报一次心跳
-                ESP_LOGI(TAG, "poll alive: sta=0x%02X len=%u queue=%u",
+            // 空闲时不再每 10 秒刷一行心跳（日志被它淹了，且无信息量）。
+            // 只在"状态真的变了"时打一次 —— 键盘挂了/中断没清掉时依然看得出来。
+            static uint8_t last_sta = 0xFF;
+            static uint32_t last_len = 0xFFFFFFFF;
+            if (sta != last_sta || len != last_len) {
+                ESP_LOGI(TAG, "poll idle: sta=0x%02X len=%u queue=%u",
                          sta, len, (unsigned)uxQueueMessagesWaiting(s_kb_q));
+                last_sta = sta;
+                last_len = len;
             }
+            idle_ticks = 0;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }

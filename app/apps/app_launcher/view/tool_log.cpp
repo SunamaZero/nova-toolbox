@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 #include "tool_logsys.h"
+#include "toolbox_layout.h"   // tl::MsgHNoTx 等骨架常量
 #include <apps/utils/audio/audio.h>
 
 using namespace launcher_view;
@@ -38,7 +39,8 @@ constexpr int RightW   = 280;
 constexpr int RightX   = ToolW - Margin - RightW;   // 868
 constexpr int LeftW    = RightX - Margin - Gap;     // 840
 constexpr int MsgY     = Margin;
-constexpr int MsgH     = 542 - Margin;              // 526
+// 日志页没有"发送行"，面板直接填到底部 —— 否则 526..606 会留一条空洞
+constexpr int MsgH     = tl::MsgHNoTx;              // 590（606 - 16）
 constexpr int RowH     = 56;
 constexpr int RowPitch = 68;
 constexpr int RowY0    = 62;

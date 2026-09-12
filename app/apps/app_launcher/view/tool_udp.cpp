@@ -135,11 +135,11 @@ void UdpToolWindow::setListening(bool on)
     if (on) {
         // 目标地址与端口从界面读一次
         if (_row_dst_ip) {
-            const char* ip = lv_textarea_get_text(_row_dst_ip->get());
-            if (ip && ip[0]) _dst_ip = ip;
+            const std::string ip = tl::textOf(_row_dst_ip.get());
+            if (!ip.empty()) _dst_ip = ip;
         }
         if (_row_dst_port) {
-            int p = atoi(lv_textarea_get_text(_row_dst_port->get()));
+            int p = atoi(tl::textOf(_row_dst_port.get()).c_str());
             if (p > 0 && p < 65536) _dst_port = (uint16_t)p;
         }
         _task_running = true;

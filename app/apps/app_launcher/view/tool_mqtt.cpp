@@ -247,9 +247,12 @@ void MqttToolWindow::setConnected(bool on)
     }
 
     // 每次启动都重新读界面值：停下后改了服务器/主题，再启动就该用新值
-    const char* bv = _row_broker ? lv_textarea_get_text(_row_broker->get()) : nullptr;
-    const char* sv = _row_sub ? lv_textarea_get_text(_row_sub->get()) : nullptr;
-    const char* pv = _row_pub ? lv_textarea_get_text(_row_pub->get()) : nullptr;
+    const std::string bs = tl::textOf(_row_broker.get());
+    const std::string ss = tl::textOf(_row_sub.get());
+    const std::string ps = tl::textOf(_row_pub.get());
+    const char* bv = bs.c_str();
+    const char* sv = ss.c_str();
+    const char* pv = ps.c_str();
     {
         std::string v = (bv && bv[0]) ? bv : _MQTT_HOST_INIT;
         // 没写 scheme 就补上 mqtt://（用户只需填 host 或 host:port）
@@ -290,8 +293,8 @@ void MqttToolWindow::publish(const char* payload)
     }
 
     if (_row_pub) {
-        const char* t = lv_textarea_get_text(_row_pub->get());
-        if (t && t[0]) {
+        const std::string t = tl::textOf(_row_pub.get());
+        if (!t.empty()) {
             _pub_topic = t;   // 改了主题不用重连就能生效
         }
     }

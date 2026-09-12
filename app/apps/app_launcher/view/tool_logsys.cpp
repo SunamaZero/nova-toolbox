@@ -21,7 +21,12 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdarg>
+#include <ctime>
 #include <string>
+#include "esp_sntp.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -51,6 +56,35 @@ vprintf_like_t s_prev_vprintf = nullptr;
 httpd_handle_t s_httpd = nullptr;
 bool s_inited = false;
 
+// ---------------------------------------------------------------------------
+// 校时：设备原先没有时间来源，日志里只有 IDF 的开机毫秒数，没法跟 PC 侧对账。
+// 联网后走 SNTP 校准系统时钟，时区固定东八区（中国大陆无夏令时）。
+// 校时失败也不影响日志 —— 时间戳退化成"[+开机秒数.十分位]"。
+// ---------------------------------------------------------------------------
+void time_sync_task(void*)
+{
+    setenv("TZ", "CST-8", 1);
+    tzset();
+
+    bool started = false;
+    int  tries   = 0;
+    for (;;) {
+        if (time(nullptr) > 1700000000) {   // 2023-11 之后视为已校时
+            ESP_LOGI("logsys", "系统时间已同步，日志带时间戳");
+            vTaskDelete(nullptr);
+        }
+        if (!started) {
+            esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+            esp_sntp_setservername(0, "ntp.aliyun.com");
+            esp_sntp_init();
+            started = true;
+        } else if (sntp_get_sync_status() != SNTP_SYNC_STATUS_COMPLETED && ++tries % 10 == 0) {
+            esp_sntp_restart();             // 首次可能网络还没就绪，每 30s 重试
+        }
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+}
+
 // 自定义 vprintf：先转发给原控制台，再存一份
 int log_vprintf(const char* fmt, va_list args)
 {
@@ -60,13 +94,31 @@ int log_vprintf(const char* fmt, va_list args)
     vsnprintf(line, sizeof(line), fmt, copy);
     va_end(copy);
 
+    // 加时间戳：校时成功打 [HH:MM:SS]，否则打 [+开机秒.十分位]
+    // 比 line 多留 24 字节给时间戳前缀，否则编译器报 format-truncation（-Werror 直接失败）
+    char stamped[kLineLen + 24];
+    {
+        char stamp[16];
+        const time_t now = time(nullptr);
+        if (now > 1700000000) {
+            struct tm tmv;
+            localtime_r(&now, &tmv);
+            strftime(stamp, sizeof(stamp), "%H:%M:%S", &tmv);
+        } else {
+            const int64_t us = esp_timer_get_time();
+            snprintf(stamp, sizeof(stamp), "+%u.%01u",
+                     (unsigned)(us / 1000000), (unsigned)((us / 100000) % 10));
+        }
+        snprintf(stamped, sizeof(stamped), "[%s] %s", stamp, line);
+    }
+
     if (s_mtx && xSemaphoreTake(s_mtx, pdMS_TO_TICKS(20)) == pdTRUE) {
-        size_t n = strlen(line);
+        size_t n = strlen(stamped);
         // 去掉尾部换行（显示时统一加）
-        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = 0;
+        while (n > 0 && (stamped[n - 1] == '\n' || stamped[n - 1] == '\r')) stamped[--n] = 0;
         if (n > 0) {
             size_t copy = n < (size_t)(kLineLen - 1) ? n : (size_t)(kLineLen - 1);
-            memcpy(s_buf[s_head], line, copy);
+            memcpy(s_buf[s_head], stamped, copy);
             s_buf[s_head][copy] = 0;
             s_head = (s_head + 1) % kMaxLines;
             s_total++;
@@ -162,6 +214,8 @@ void report_ip_task(void*)
 
 void init()
 {
+    xTaskCreate(time_sync_task, "log_time", 3072, nullptr, 3, nullptr);   // 联网后校时
+
     if (s_inited) return;
     s_inited = true;
 
