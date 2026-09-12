@@ -63,9 +63,9 @@ bool s_inited = false;
 // ---------------------------------------------------------------------------
 void time_sync_task(void*)
 {
-    setenv("TZ", "CST-8", 1);
-    tzset();
-
+    // 时区不在这里设 —— 见 init()。这里只负责 SNTP 校时。
+    // （曾经把 setenv("TZ") 放这里，结果日志钩子在它之前就挂上了，
+    //   开机的整段日志都是 UTC 时间戳，用户实测发现"时间不对"。）
     bool started = false;
     int  tries   = 0;
     for (;;) {
@@ -214,10 +214,27 @@ void report_ip_task(void*)
 
 void init()
 {
-    xTaskCreate(time_sync_task, "log_time", 3072, nullptr, 3, nullptr);   // 联网后校时
-
     if (s_inited) return;
     s_inited = true;
+
+    // 【时区必须在这里同步设好】不能丢给异步任务：日志钩子一挂上就开始打时间戳，
+    // 若时区还没生效，打的就全是 UTC（用户实测差 8 小时）。
+    // CST-8 是 POSIX 写法，语义就是 UTC+8（POSIX 的符号与直觉相反）。
+    setenv("TZ", "CST-8", 1);
+    tzset();
+    {
+        // 自证诊断：本地时与 UTC 时若相同，说明时区没生效。
+        // 这样下次拉设备日志就能一眼判断，不用再猜。
+        const time_t now = time(nullptr);
+        struct tm lt {}, gt {};
+        localtime_r(&now, &lt);
+        gmtime_r(&now, &gt);
+        ESP_LOGI(TAG, "TZ=%s | 本地 %02d:%02d:%02d vs UTC %02d:%02d:%02d | %s",
+                 getenv("TZ") ? getenv("TZ") : "(null)",
+                 lt.tm_hour, lt.tm_min, lt.tm_sec,
+                 gt.tm_hour, gt.tm_min, gt.tm_sec,
+                 (lt.tm_hour == gt.tm_hour) ? "⚠️ 时区未生效(按UTC打)" : "✓ 时区已生效");
+    }
 
     s_buf = (char (*)[kLineLen])heap_caps_calloc(kMaxLines, kLineLen, MALLOC_CAP_SPIRAM);
     if (!s_buf) {
@@ -230,6 +247,7 @@ void init()
 
     // HTTP server 延后到 WiFi 就绪（见 report_ip_task）
     xTaskCreate(report_ip_task, "log_report", 8192, nullptr, 3, nullptr);
+    xTaskCreate(time_sync_task, "log_time", 3072, nullptr, 3, nullptr);   // 联网后 SNTP 校时
 }
 
 std::string tail(int n)
