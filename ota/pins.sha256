@@ -1,0 +1,3 @@
+# 钉值表第二副本（机器外）。格式：sha256  版本号（firmware_archive 归档字节；只留哈希，不含 IP/路径）
+0ba0db524ae5c762d4730cf17a38c27f6cb16839d909d286bef325d8ef13ff2c  1.0.35
+2ec28711b01ca200dc84a749e46faf83fe10d2321580ad00f3f6b3891973ff8a  1.0.4
