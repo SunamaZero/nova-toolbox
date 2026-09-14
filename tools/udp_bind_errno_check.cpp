@@ -19,6 +19,8 @@
  *   5) fd 不泄漏     —— 失败后 close 的路径 fd 计数回到基线；
  *                       配一组"故意不 close"的反向对照，证明探针真能发现泄漏
  *                       （探针抓不出反例 = 没测）
+ *   7) 状态行文案    —— 三条启动失败路径（socket/bind/起任务）都不许落回「已停止」，
+ *                       且 bind 与 socket 可区分（跑的是固件同一份 status_line()）
  *
  * 已知差异（不是 bug）：errno 数值随 C 库变（设备 newlib 112 / Linux glibc 98），
  *   所以判据只用**符号名**；数值打印出来只是给你看差异。
@@ -205,6 +207,44 @@ int main()
         if (holder >= 0) {
             close(holder);
         }
+    }
+
+    printf("\n== 7. 状态行文案：失败不许被说成「已停止」==\n");
+    {
+        char b[80];
+
+        // (live, step, 期望) —— 与固件 refreshUi() 调的是同一个 status_line()
+        struct Case {
+            bool                    live;
+            udp_bind_err::Step      step;
+            const char*             want;
+            const char*             what;
+        };
+        const Case cases[] = {
+            {false, udp_bind_err::Step::None,   "已停止",       "没失败过、也没监听 → 已停止"},
+            {false, udp_bind_err::Step::Socket, "启动失败 :8888", "socket 建不出来 → 启动失败（不是已停止）"},
+            {false, udp_bind_err::Step::Bind,   "绑定失败 :8888", "bind 失败 → 绑定失败"},
+            {false, udp_bind_err::Step::Task,   "启动失败 :8888", "收包任务起不来 → 启动失败（不是已停止）"},
+            {true,  udp_bind_err::Step::None,   "监听中 :8888",   "真在监听 → 监听中"},
+            {true,  udp_bind_err::Step::Bind,   "监听中 :8888",   "在监听时不拿陈旧失败态盖住它"},
+        };
+        for (const Case& c : cases) {
+            b[0] = '\0';
+            udp_bind_err::status_line(b, sizeof(b), c.live, c.step, 8888);
+            char msg[160];
+            snprintf(msg, sizeof(msg), "%s（得到「%s」）", c.what, b);
+            check(strcmp(b, c.want) == 0, msg);
+        }
+
+        // 三条失败路径文案两两不同 —— 否则「停在哪一步」就没传出去
+        char s_sock[80], s_bind[80], s_task[80];
+        udp_bind_err::status_line(s_sock, sizeof(s_sock), false, udp_bind_err::Step::Socket, 8888);
+        udp_bind_err::status_line(s_bind, sizeof(s_bind), false, udp_bind_err::Step::Bind, 8888);
+        udp_bind_err::status_line(s_task, sizeof(s_task), false, udp_bind_err::Step::Task, 8888);
+        check(strcmp(s_sock, "已停止") != 0 && strcmp(s_bind, "已停止") != 0
+                  && strcmp(s_task, "已停止") != 0,
+              "三条失败路径都不落回「已停止」");
+        check(strcmp(s_bind, s_sock) != 0, "bind 失败 与 socket 失败 文案可区分");
     }
 
     printf("\n== 结果：%s ==\n", g_fail == 0 ? "全部符合预期" : "有不符合项，见上面 [FAIL]");

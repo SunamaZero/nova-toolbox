@@ -62,6 +62,33 @@ inline const char* name_of(int err)
     return (e != nullptr) ? e->name : "EUNKNOWN";
 }
 
+// ---- 启动链停在哪一步 --------------------------------------------------
+// socket 建不出来 / bind 失败 / 收包任务起不来，是三件不同的事。
+// 合成一个「没监听」布尔值，就会把前两者显示成「已停止」——用户以为没点着。
+enum class Step { None = 0, Socket, Bind, Task };
+
+// 状态行文案（纯函数，便于上位机自测：文案算错是回归，不是审美）。
+// live 优先：真在监听就是「监听中」，别拿陈旧的失败态盖住它。
+inline void status_line(char* out, size_t out_len, bool live, Step step, unsigned port)
+{
+    if (live) {
+        snprintf(out, out_len, "监听中 :%u", port);
+        return;
+    }
+    switch (step) {
+        case Step::Bind:
+            snprintf(out, out_len, "绑定失败 :%u", port);
+            break;
+        case Step::Socket:
+        case Step::Task:
+            snprintf(out, out_len, "启动失败 :%u", port);
+            break;
+        default:
+            snprintf(out, out_len, "已停止");
+            break;
+    }
+}
+
 // 屏上一行文案：回显真实 addr:port（只说"绑定失败"等于没说），带下一步。
 // 超长由 snprintf 截断 —— 宁可少几个字，也不许撑破报文区。
 inline void format_line(char* out, size_t out_len, int err, const char* addr, unsigned port)

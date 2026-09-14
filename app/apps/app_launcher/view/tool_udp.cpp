@@ -10,6 +10,8 @@
  * 后台任务只负责收包：socket + bind 在 setListening(true) 里**同步**做完 ——
  * bind 失败必须当场知道（按钮回「开始监听」、屏上给下一步），而不是先显示
  * 「监听中」再让后台任务悄悄死掉。errno → 文案走 tool_udp_bind_err.h 的查表。
+ * 启动链三步（socket / bind / xTaskCreate）**任一步失败都留失败态**（_fail_kind），
+ * 状态行只说哪一步挂了 —— 一句话概括：失败不许被显示成「已停止」。
  */
 #if defined(__has_include)
 #if __has_include("sdkconfig.h")
@@ -146,7 +148,13 @@ void UdpToolWindow::setListening(bool on)
             const int e = errno;   // 先抓：后面的调用可能改写 errno
             char line[160];
             snprintf(line, sizeof(line), "[启动失败] 建不了 socket（errno=%d）→ 关掉别的工具页再试", e);
-            _rx_panel->addText((tl::stamp(line) + "\n").c_str());
+            if (_rx_panel) {
+                _rx_panel->addText((tl::stamp(line) + "\n").c_str());
+            }
+            // 这一路连 bind 都没走到，但也**不是**「已停止」——失败态得留住，
+            // 否则状态行又一次把失败说成没开始。
+            _fail_kind = Step::Socket;
+            _bind_err  = e;
             ESP_LOGE(_esp_tag, "UDP_SOCKET_FAIL errno=%d port=%u", e, (unsigned)_local_port);
             refreshUi();
             return;
@@ -166,6 +174,7 @@ void UdpToolWindow::setListening(bool on)
             _sock         = -1;
             _task_running = false;
             _listening    = false;
+            _fail_kind    = Step::Bind;
             _bind_err     = e;
             reportBindFail(e);     // 屏上一行 + 日志一行
             refreshUi();           // 状态行/按钮当场回「未监听」，不等下一次轮询
@@ -176,6 +185,7 @@ void UdpToolWindow::setListening(bool on)
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
         _sock         = sock;
+        _fail_kind    = Step::None;   // 起来了才算把上一次的失败清掉
         _bind_err     = 0;
         _listening    = true;
         _task_running = true;
@@ -187,8 +197,22 @@ void UdpToolWindow::setListening(bool on)
             _listening    = false;
             lwip_close(sock);
             _sock = -1;
-            _rx_panel->addText((tl::stamp("[启动失败：任务创建失败]") + "\n").c_str());
-            ESP_LOGE(_esp_tag, "UDP_TASK_FAIL port=%u", (unsigned)_local_port);
+            // 状态一样不能落回「已停止」：socket 建了、bind 也成功了，是**起任务**这步挂的。
+            // errno 这里没有意义（xTaskCreate 不置 errno），真实返回值是 pdFAIL ——
+            // IDF 里 pdFAIL 只在一处产生：pvPortMalloc 拿不到 TCB / 栈
+            //（esp_additions/freertos_tasks_c_additions.h L273-276 errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY），
+            // 所以记 ENOMEM = 归类「内存不足」，日志里同时保留原始事实 pdFAIL，不假报 errno。
+            _fail_kind = Step::Task;
+            _bind_err  = ENOMEM;
+            char line[160];
+            snprintf(line, sizeof(line),
+                     "[启动失败] 收包任务起不来（内存不足）:%u → 关掉别的工具页再试",
+                     (unsigned)_local_port);
+            if (_rx_panel) {
+                _rx_panel->addText((tl::stamp(line) + "\n").c_str());
+            }
+            ESP_LOGE(_esp_tag, "UDP_TASK_FAIL port=%u ret=pdFAIL(heap) errno=ENOMEM",
+                     (unsigned)_local_port);
         } else {
             char line[96];
             snprintf(line, sizeof(line), "[开始监听] 0.0.0.0:%u（本机全部网卡）", (unsigned)_local_port);
@@ -207,20 +231,17 @@ void UdpToolWindow::refreshUi()
     if (!_status_label) {
         return;
     }
-    const bool live = _listening && _sock >= 0;
+    const bool live   = _listening && _sock >= 0;
+    const bool failed = (_fail_kind != Step::None);
 
+    // 文案出自 udp_bind_err::status_line()（与上位机自测同一份实现，别在这儿另写一份）：
+    // 失败是独立状态，只说「已停止」等于把失败藏起来，用户会以为没点着；
+    // 而且停在哪一步就说哪一步 —— bind 失败和 socket/起任务失败不是一回事。
     char b[80];
-    if (live) {
-        snprintf(b, sizeof(b), "监听中 :%u", (unsigned)_local_port);
-    } else if (_bind_err != 0) {
-        // 失败是独立状态：只说「已停止」等于把失败藏起来，用户会以为没点着
-        snprintf(b, sizeof(b), "绑定失败 :%u", (unsigned)_local_port);
-    } else {
-        snprintf(b, sizeof(b), "已停止");
-    }
+    udp_bind_err::status_line(b, sizeof(b), live, _fail_kind, (unsigned)_local_port);
     _status_label->setText(b);
     if (_status_dot) {
-        const uint32_t dot = live ? tb::success() : (_bind_err != 0 ? tb::danger() : tb::textDim());
+        const uint32_t dot = live ? tb::success() : (failed ? tb::danger() : tb::textDim());
         lv_obj_set_style_bg_color(_status_dot, lv_color_hex(dot), 0);
     }
     if (_btn_run) {
@@ -247,6 +268,7 @@ void UdpToolWindow::onOpen()
     _task_handle  = nullptr;
     _sock         = -1;
     _listening    = false;
+    _fail_kind    = Step::None;
     _bind_err     = 0;
     _rx_count     = 0;
     _port_idx     = 0;
@@ -283,6 +305,7 @@ void UdpToolWindow::onOpen()
         _port_idx   = (_port_idx + 1) % 4;
         _local_port = _local_ports[_port_idx];
         _bind_err   = 0;   // 换了端口，上一次的失败提示不再适用（否则会显示"绑定失败 :新端口"）
+        _fail_kind  = Step::None;
         if (_listening || _task_running) {
             // 端口改了得重新绑：先停，再确保状态复位后重新开始
             setListening(false);

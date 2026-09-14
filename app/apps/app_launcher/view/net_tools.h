@@ -23,6 +23,7 @@
 #include <smooth_ui_toolkit.h>
 #include <smooth_lvgl.h>
 #include <apps/utils/ui/window.h>
+#include "tool_udp_bind_err.h"   // UDP 失败态：errno→文案查表 + 状态行纯函数（上位机自测共用）
 
 namespace launcher_view {
 
@@ -42,11 +43,18 @@ private:
     void reportBindFail(int err);
     static void udpRxTask(void* arg);
 
+    // 失败态是**独立状态**：只留一个 errno 不够 ——「socket 建不出来」和「bind 失败」
+    // 是两回事，共用一句文案等于把原因说错。所以记两步：失败停在哪一步 + errno。
+    // Step 定义在 tool_udp_bind_err.h（纯头文件），状态行文案 status_line() 也跟着它，
+    // 好让上位机自测能直接断言文案 —— 文案算错是回归，不该只能靠真机截图看。
+    using Step = udp_bind_err::Step;
+
     bool  _task_running = false;
     void* _task_handle  = nullptr;
     int   _sock         = -1;
     bool  _listening    = false;
-    int   _bind_err     = 0;   // 最近一次 bind 失败的 errno（0 = 没失败过）
+    Step  _fail_kind    = Step::None;  // 最近一次启动失败停在哪一步（None = 没失败过）
+    int   _bind_err     = 0;   // 该步的 errno（socket/bind 取真实 errno；Task 步见 tool_udp.cpp 注释）
 
     std::string _dst_ip     = "255.255.255.255";
     uint16_t    _dst_port   = 8888;
