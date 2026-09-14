@@ -38,12 +38,15 @@ private:
     void sendText(const char* text);
     void setListening(bool on);
     void refreshUi();
+    // bind 失败：屏上一行（带下一步）+ 日志一行（机器可读，供 /log 抓）
+    void reportBindFail(int err);
     static void udpRxTask(void* arg);
 
     bool  _task_running = false;
     void* _task_handle  = nullptr;
     int   _sock         = -1;
     bool  _listening    = false;
+    int   _bind_err     = 0;   // 最近一次 bind 失败的 errno（0 = 没失败过）
 
     std::string _dst_ip     = "255.255.255.255";
     uint16_t    _dst_port   = 8888;

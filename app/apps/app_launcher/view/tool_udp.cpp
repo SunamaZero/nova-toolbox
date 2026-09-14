@@ -7,8 +7,9 @@
  *   右列 —— 状态 / 目标地址 / 目标端口 / 本机端口 / 收包数
  *           + 开始·停止监听 + 清空·关闭
  *
- * 后台任务持 UDP socket 收包 → 队列 → UI 显示。
- * 「开始/停止监听」是真的建 socket / 关 socket，不是摆设。
+ * 后台任务只负责收包：socket + bind 在 setListening(true) 里**同步**做完 ——
+ * bind 失败必须当场知道（按钮回「开始监听」、屏上给下一步），而不是先显示
+ * 「监听中」再让后台任务悄悄死掉。errno → 文案走 tool_udp_bind_err.h 的查表。
  */
 #if defined(__has_include)
 #if __has_include("sdkconfig.h")
@@ -20,6 +21,7 @@
 #include "toolbox_windows.h"
 #include "toolbox_theme.h"
 #include "toolbox_layout.h"
+#include "tool_udp_bind_err.h"   // bind 失败 errno → 文案（纯 C++，上位机自测共用同一份）
 #include "net_tools.h"
 #include "tool_kbd.h"
 #include <lvgl.h>
@@ -28,6 +30,8 @@
 #include <smooth_ui_toolkit.h>
 #include <smooth_lvgl.h>
 #include <apps/utils/audio/audio.h>
+#include "esp_log.h"   // 机器可读日志通道：UDP_BIND_FAIL / UDP_BIND_OK 走串口（/log 可抓）
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -42,6 +46,8 @@ using namespace smooth_ui_toolkit;
 using namespace smooth_ui_toolkit::lvgl_cpp;
 
 static const std::string _tag = "tool-udp";
+// ESP_LOG 的 tag 得是编译期字符串（宏会反复展开），所以另留一份 const char*
+static constexpr const char* _esp_tag = "tool-udp";
 
 static constexpr int _RX_MAX_CHARS = 3000;
 
@@ -56,43 +62,33 @@ UdpToolWindow::UdpToolWindow()
     config.bgColor  = tb::bg();
 }
 
+// bind 失败：一条给屏（回显 addr:port + 下一步），一条给日志（机器可读，/log 可抓）
+void UdpToolWindow::reportBindFail(int err)
+{
+    char line[160];
+    udp_bind_err::format_line(line, sizeof(line), err, "0.0.0.0", (unsigned)_local_port);
+    if (_rx_panel) {
+        _rx_panel->addText((tl::stamp(line) + "\n").c_str());
+    }
+    ESP_LOGE(_esp_tag, "UDP_BIND_FAIL errno=%d(%s) port=%u addr=0.0.0.0",
+             err, udp_bind_err::name_of(err), (unsigned)_local_port);
+}
+
 void UdpToolWindow::udpRxTask(void* arg)
 {
     UdpToolWindow* self = static_cast<UdpToolWindow*>(arg);
 
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    // fd 已经在 setListening(true) 里建好并 bind 成功 —— 这里只管收，
+    // 不再自己建 socket/bind（那样失败要跨线程再报一次，中途状态还会骗人）。
+    const int sock = self->_sock;
     if (sock < 0) {
-        mclog::tagError(_tag, "socket create failed");
+        ESP_LOGE(_esp_tag, "UDP_RX_NO_FD 收包任务拿不到 socket，直接退出");
         self->_task_running = false;
-        self->_listening    = false;
-        vTaskDelete(nullptr);
-        return;
-    }
-    self->_sock = sock;
-
-    int broadcast = 1;
-    setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family      = AF_INET;
-    addr.sin_port        = htons(self->_local_port);
-    addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        mclog::tagError(_tag, "bind failed on port {}", self->_local_port);
-        lwip_close(sock);
-        self->_sock         = -1;
-        self->_task_running = false;
-        self->_listening    = false;
         vTaskDelete(nullptr);
         return;
     }
 
-    struct timeval tv = {0, 100000};
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-    self->_listening = true;
-    mclog::tagInfo(_tag, "udp rx task started on port {}", self->_local_port);
+    ESP_LOGI(_esp_tag, "UDP_RECV_START fd=%d port=%u", sock, (unsigned)self->_local_port);
 
     char buf[1024];
     while (self->_task_running) {
@@ -119,7 +115,8 @@ void UdpToolWindow::udpRxTask(void* arg)
         }
     }
 
-    mclog::tagInfo(_tag, "udp rx task exit");
+    ESP_LOGI(_esp_tag, "UDP_RECV_STOP fd=%d port=%u（socket 一并关闭，不留半开）",
+             sock, (unsigned)self->_local_port);
     lwip_close(sock);
     self->_sock      = -1;
     self->_listening = false;
@@ -142,12 +139,60 @@ void UdpToolWindow::setListening(bool on)
             int p = atoi(tl::textOf(_row_dst_port.get()).c_str());
             if (p > 0 && p < 65536) _dst_port = (uint16_t)p;
         }
-        _task_running = true;
-        if (xTaskCreate(udpRxTask, "udp_rx", 4096, this, 5, (TaskHandle_t*)&_task_handle) != pdPASS) {
+
+        // ---- 建 socket + bind：同步做完，失败当场回滚（不建收包任务）----
+        int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (sock < 0) {
+            const int e = errno;   // 先抓：后面的调用可能改写 errno
+            char line[160];
+            snprintf(line, sizeof(line), "[启动失败] 建不了 socket（errno=%d）→ 关掉别的工具页再试", e);
+            _rx_panel->addText((tl::stamp(line) + "\n").c_str());
+            ESP_LOGE(_esp_tag, "UDP_SOCKET_FAIL errno=%d port=%u", e, (unsigned)_local_port);
+            refreshUi();
+            return;
+        }
+
+        int broadcast = 1;
+        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
+
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        addr.sin_family      = AF_INET;
+        addr.sin_port        = htons(_local_port);
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+            const int e = errno;   // 【坑】必须在 close 之前抓：close 会把 errno 改掉
+            lwip_close(sock);      // 不关就是 fd 泄漏，下次重试还会接着失败
+            _sock         = -1;
             _task_running = false;
+            _listening    = false;
+            _bind_err     = e;
+            reportBindFail(e);     // 屏上一行 + 日志一行
+            refreshUi();           // 状态行/按钮当场回「未监听」，不等下一次轮询
+            return;                // 收包任务不建
+        }
+
+        struct timeval tv = {0, 100000};
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+        _sock         = sock;
+        _bind_err     = 0;
+        _listening    = true;
+        _task_running = true;
+        ESP_LOGI(_esp_tag, "UDP_BIND_OK port=%u addr=0.0.0.0 fd=%d", (unsigned)_local_port, sock);
+
+        if (xTaskCreate(udpRxTask, "udp_rx", 4096, this, 5, (TaskHandle_t*)&_task_handle) != pdPASS) {
+            // 任务起不来：fd 得自己收，否则端口一直被自己占着
+            _task_running = false;
+            _listening    = false;
+            lwip_close(sock);
+            _sock = -1;
             _rx_panel->addText((tl::stamp("[启动失败：任务创建失败]") + "\n").c_str());
+            ESP_LOGE(_esp_tag, "UDP_TASK_FAIL port=%u", (unsigned)_local_port);
         } else {
-            _rx_panel->addText((tl::stamp("[开始监听]") + "\n").c_str());
+            char line[96];
+            snprintf(line, sizeof(line), "[开始监听] 0.0.0.0:%u（本机全部网卡）", (unsigned)_local_port);
+            _rx_panel->addText((tl::stamp(line) + "\n").c_str());
         }
     } else {
         _task_running = false;
@@ -167,14 +212,19 @@ void UdpToolWindow::refreshUi()
     char b[80];
     if (live) {
         snprintf(b, sizeof(b), "监听中 :%u", (unsigned)_local_port);
+    } else if (_bind_err != 0) {
+        // 失败是独立状态：只说「已停止」等于把失败藏起来，用户会以为没点着
+        snprintf(b, sizeof(b), "绑定失败 :%u", (unsigned)_local_port);
     } else {
         snprintf(b, sizeof(b), "已停止");
     }
     _status_label->setText(b);
     if (_status_dot) {
-        lv_obj_set_style_bg_color(_status_dot, lv_color_hex(live ? tb::success() : tb::textDim()), 0);
+        const uint32_t dot = live ? tb::success() : (_bind_err != 0 ? tb::danger() : tb::textDim());
+        lv_obj_set_style_bg_color(_status_dot, lv_color_hex(dot), 0);
     }
     if (_btn_run) {
+        // 失败后按钮回「开始监听」——点一下就是原地重试，不用重启设备
         _btn_run->label().setText(live ? "停止监听" : "开始监听");
         _btn_run->label().setTextColor(lv_color_hex(live ? tb::danger() : tb::accent()));
         _btn_run->setBorderColor(lv_color_hex(live ? tb::danger() : tb::accent()));
@@ -197,6 +247,7 @@ void UdpToolWindow::onOpen()
     _task_handle  = nullptr;
     _sock         = -1;
     _listening    = false;
+    _bind_err     = 0;
     _rx_count     = 0;
     _port_idx     = 0;
     _local_port   = _local_ports[0];
@@ -231,6 +282,7 @@ void UdpToolWindow::onOpen()
         audio::play_next_tone_progression();
         _port_idx   = (_port_idx + 1) % 4;
         _local_port = _local_ports[_port_idx];
+        _bind_err   = 0;   // 换了端口，上一次的失败提示不再适用（否则会显示"绑定失败 :新端口"）
         if (_listening || _task_running) {
             // 端口改了得重新绑：先停，再确保状态复位后重新开始
             setListening(false);
